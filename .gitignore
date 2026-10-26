@@ -3,3 +3,7 @@ dist/
 .env
 .env.*
 .DS_Store
+.claude/settings.local.json
+PLAN.md
+CLAUDE.md
+.omc/
