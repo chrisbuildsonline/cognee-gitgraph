@@ -14,4 +14,4 @@ Python, Cognee SDK, NetworkX, Tree-sitter, GitPython, Pytest, FastAPI
 
 ## License
 
-MIT, see LICENSE.
+Apache-2.0, same as cognee. See LICENSE.
