@@ -96,6 +96,16 @@ async def test_remember_puts_every_row_in_the_graph(tmp_path: Path) -> None:
     assert any("shared/auth.py::verify_token" in r["text"] for r in rows["symbols"])
 
 
+async def test_id_is_the_first_row_data_line_of_every_row(tmp_path: Path) -> None:
+    await _remember(build_sample_repo(tmp_path / "repo").path, tmp_path)
+
+    for table, rows in (await _row_nodes()).items():
+        assert rows
+        for props in rows:
+            _, _, data = props["text"].partition("\nRow Data:\n")
+            assert data.startswith("  id: "), (table, props["text"])
+
+
 async def test_remembering_twice_adds_no_row_nodes(tmp_path: Path) -> None:
     repo = build_sample_repo(tmp_path / "repo").path
     await _remember(repo, tmp_path)
@@ -112,7 +122,7 @@ async def test_link_rows_adds_exact_edges_per_relationship(tmp_path: Path) -> No
     summary = await link_rows(await _remember(repo, tmp_path))
 
     assert await _link_counts() == LINK_COUNTS
-    assert summary == {**LINK_COUNTS, "missing": 0}
+    assert summary == {**LINK_COUNTS, "missing": 0, "ambiguous": 0}
 
 
 async def test_link_rows_twice_and_remember_twice_adds_no_edges(tmp_path: Path) -> None:
@@ -125,7 +135,7 @@ async def test_link_rows_twice_and_remember_twice_adds_no_edges(tmp_path: Path) 
     nodes_after, edges_after = await _graph()
 
     assert await _link_counts() == LINK_COUNTS
-    assert again == {**LINK_COUNTS, "missing": 0}
+    assert again == {**LINK_COUNTS, "missing": 0, "ambiguous": 0}
     assert len(nodes_after) == len(nodes_before)
     assert Counter(edges_after) == Counter(edges_before)
 

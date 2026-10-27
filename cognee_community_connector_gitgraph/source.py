@@ -25,7 +25,10 @@ Row = dict[str, Any]
 def _resource(name: str, rows: list[Row], nullable: tuple[str, ...] = ()) -> Any:
     # dlt drops a column that is None in every row unless it is declared, so the columns that can
     # be None get a type. A fresh dict per column: dlt edits hint dicts in place.
-    columns = {c: TColumnSchema(data_type="text", nullable=True) for c in nullable}
+    # Declared columns come first in the table, and ``id`` must be first of all: cognee renders a
+    # row's columns in order and ``link_rows`` trusts only the first line as the row's id.
+    columns = {"id": TColumnSchema(data_type="text")}
+    columns |= {c: TColumnSchema(data_type="text", nullable=True) for c in nullable}
     return dlt.resource(
         rows, name=name, write_disposition="replace", primary_key="id", columns=columns
     )
