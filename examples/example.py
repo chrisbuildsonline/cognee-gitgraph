@@ -1,4 +1,4 @@
-"""Load a repo into Cognee with no LLM key and count the row nodes per table.
+"""Load a repo into Cognee with no LLM key, count the row nodes per table and link the rows.
 
 Uses a throwaway Cognee home in a temp dir, so nothing is left behind. Without arguments it builds
 the sample monorepo; pass a repo path (and optionally --ci-logs) to use your own.
@@ -13,7 +13,7 @@ from pathlib import Path
 import cognee
 from cognee.infrastructure.databases.graph import get_graph_engine
 
-from cognee_community_connector_gitgraph import build_sample_repo, gitgraph_source
+from cognee_community_connector_gitgraph import build_sample_repo, gitgraph_source, link_rows
 
 CI_FIXTURES = Path(__file__).parent.parent / "tests" / "fixtures" / "ci"
 
@@ -26,12 +26,14 @@ async def count_rows() -> Counter[str]:
 
 
 async def main(repo: Path, ci_logs: Path | None) -> None:
-    result = await cognee.remember(
-        gitgraph_source(repo, ci_logs=ci_logs), dataset_name="gitgraph", self_improvement=False
-    )
+    source = gitgraph_source(repo, ci_logs=ci_logs)
+    result = await cognee.remember(source, dataset_name="gitgraph", self_improvement=False)
     print(result)
     for table, count in sorted((await count_rows()).items()):
         print(f"{table}: {count}")
+    print("links between rows:")
+    for relationship, count in sorted((await link_rows(source)).items()):
+        print(f"{relationship}: {count}")
 
 
 if __name__ == "__main__":
