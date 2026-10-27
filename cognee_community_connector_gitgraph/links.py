@@ -18,9 +18,15 @@ import logging
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from cognee.infrastructure.databases.graph import get_graph_engine
-
 logger = logging.getLogger(__name__)
+
+
+async def get_graph_engine() -> Any:
+    # Imported here: cognee logs to stderr on import, and only the remember path needs it.
+    from cognee.infrastructure.databases.graph import get_graph_engine as engine
+
+    return await engine()
+
 
 Row = Mapping[str, Any]
 RowKey = tuple[str, str]  # (table, id)
