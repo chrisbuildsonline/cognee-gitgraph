@@ -6,6 +6,7 @@
     "test": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run pytest -q'",
     "lint": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run ruff check . && uv run ruff format --check .'",
     "format": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run ruff check --fix . && uv run ruff format .'",
-    "typecheck": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run mypy cognee_community_connector_gitgraph tests'"
+    "typecheck": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run mypy cognee_community_connector_gitgraph tests examples'",
+    "example": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run python examples/example.py'"
   }
 }
