@@ -148,6 +148,54 @@ def test_usage_errors_exit_2(capsys: pytest.CaptureFixture[str]) -> None:
     assert "usage" in capsys.readouterr().err
 
 
+def _script() -> str:
+    return str(Path(sys.executable).parent / "cognee-gitgraph")
+
+
+def test_error_is_the_only_stderr_line(tmp_path: Path) -> None:
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    done = subprocess.run(
+        [_script(), *_args(plain)], capture_output=True, text=True, check=False, env=_keyless()
+    )
+
+    assert done.returncode == 2
+    assert done.stdout == ""
+    assert done.stderr.startswith("error: ")
+    assert done.stderr.count("\n") == 1
+
+
+def test_clean_blast_has_empty_stderr(repo: Path) -> None:
+    done = subprocess.run(
+        [_script(), *_args(repo)], capture_output=True, text=True, check=False, env=_keyless()
+    )
+
+    assert done.returncode == 0
+    assert done.stderr == ""
+    assert "Blast radius of main...feature/rotate-tokens" in done.stdout
+
+
+def test_one_shared_commit_is_singular() -> None:
+    from cognee_community_connector_gitgraph.cli import _report
+
+    result = {
+        "base": "a",
+        "head": "b",
+        "max_hops": 1,
+        "changed_files": [],
+        "changed_symbols": [],
+        "services": [],
+        "symbols": [],
+        "files": [],
+        "co_changed": [{"path": "x.py", "shas": ["1"]}, {"path": "y.py", "shas": ["1", "2"]}],
+        "ci_failures": [],
+    }
+    report = _report(result)
+
+    assert "x.py  (1 shared commit)" in report
+    assert "y.py  (2 shared commits)" in report
+
+
 def test_console_script_runs(repo: Path) -> None:
     script = Path(sys.executable).parent / "cognee-gitgraph"
     done = subprocess.run(
@@ -161,8 +209,7 @@ def test_console_script_runs(repo: Path) -> None:
         [str(script), *_args(repo, "--hops", "-1")], capture_output=True, text=True, check=False
     )
     assert bad.returncode == 2
-    # importing cognee logs a line or two to stderr before main runs; the error is the last line
-    assert bad.stderr.splitlines()[-1].startswith("error: ")
+    assert bad.stderr.startswith("error: ")
     assert "Traceback" not in bad.stderr
 
 
@@ -214,7 +261,8 @@ print(json.dumps({"code": code, "result": result, "commits": commits}))
 
 
 def _keyless() -> dict[str, str]:
-    skip = {"LLM_API_KEY", "OPENAI_API_KEY", "EMBEDDING_API_KEY"}
+    # LOG_LEVEL: in-process main() calls set it, and the subprocesses must start without it
+    skip = {"LLM_API_KEY", "OPENAI_API_KEY", "EMBEDDING_API_KEY", "LOG_LEVEL"}
     return {k: v for k, v in os.environ.items() if k not in skip}
 
 
@@ -322,6 +370,33 @@ def test_demo_json_in_a_fresh_process() -> None:
         "ci_failures": 2,
     }
     assert sorted(f["job"] for f in result["ci_failures"]) == ["billing-tests", "orders-tests"]
+
+
+@pytest.mark.integration
+def test_demo_keeps_cognee_logs_off_the_terminal() -> None:
+    done = subprocess.run(
+        [_script(), "demo"], capture_output=True, text=True, check=False, env=_keyless()
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert "Cognee graph" in done.stdout
+    for noise in ("Logging initialized", "auth posture", "Log file created", "Cognee 1.0"):
+        assert noise not in done.stderr
+    assert done.stderr == ""
+
+
+@pytest.mark.integration
+def test_verbose_brings_cognee_logs_back() -> None:
+    done = subprocess.run(
+        [_script(), "demo", "--verbose"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_keyless(),
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert "Log file created" in done.stderr
 
 
 @pytest.mark.integration

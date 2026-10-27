@@ -3,7 +3,9 @@
 import argparse
 import asyncio
 import contextlib
+import io
 import json
+import os
 import sys
 import tempfile
 from collections import Counter
@@ -68,7 +70,8 @@ def _blast(args: argparse.Namespace) -> dict[str, Any]:
     result |= {"base": args.base, "head": args.head}
     if args.remember:
         sha = Repo(args.repo).commit(args.head).hexsha[:12]
-        with contextlib.redirect_stdout(sys.stderr):  # cognee prints progress; stdout is the report
+        # cognee prints progress; stdout is the report, so it goes to stderr (or nowhere)
+        with contextlib.redirect_stdout(sys.stderr if args.verbose else io.StringIO()):
             result["cognee"] = asyncio.run(_remember(args, refs, f"gitgraph-{sha}"))
     return result
 
@@ -107,7 +110,10 @@ def _report(result: dict[str, Any]) -> str:
     lines += [f"At-risk symbols: {len(result['symbols'])} in {len(result['files'])} files"]
     if result["co_changed"]:
         lines += ["", "Co-changed files:"]
-        lines += [f"  {c['path']}  ({len(c['shas'])} shared commits)" for c in result["co_changed"]]
+        lines += [
+            f"  {c['path']}  ({len(c['shas'])} shared commit{'s' * (len(c['shas']) != 1)})"
+            for c in result["co_changed"]
+        ]
     if result["ci_failures"]:
         lines += ["", "CI failures in at-risk services:"]
         lines += [
@@ -147,6 +153,7 @@ def _demo(args: argparse.Namespace) -> dict[str, Any]:
                 ci=[ci],
                 hops=4,
                 remember=True,
+                verbose=args.verbose,
             )
         )
 
@@ -164,6 +171,7 @@ def _parser() -> argparse.ArgumentParser:
     demo = commands.add_parser("demo", help="blast the built-in sample repo through Cognee")
     for command in (blast, demo):
         command.add_argument("--json", action="store_true", help="print JSON only")
+        command.add_argument("--verbose", action="store_true", help="show Cognee's own logs")
     blast.set_defaults(run=_blast)
     demo.set_defaults(run=_demo)
     return parser
@@ -171,6 +179,8 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if not args.verbose:  # cognee reads this when it is first imported, so set it before then
+        os.environ.setdefault("LOG_LEVEL", "ERROR")
     try:
         result = args.run(args)
     except ValueError as exc:
