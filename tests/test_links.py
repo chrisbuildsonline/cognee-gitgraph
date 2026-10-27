@@ -2,12 +2,13 @@
 
 from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-from cognee_community_connector_gitgraph import build_sample_repo, gitgraph_source
-from cognee_community_connector_gitgraph.links import build_edges
+from cognee_community_connector_gitgraph import build_sample_repo, gitgraph_source, links
+from cognee_community_connector_gitgraph.links import build_edges, index_rows, link_rows
 
 FIXTURES = Path(__file__).parent / "fixtures" / "ci"
 
@@ -98,6 +99,105 @@ def test_ambiguous_prefix_makes_no_edge() -> None:
     tables: Tables = {"commits": commits, "ci_failures": [_ci("abcdef1"), _ci("abcdef10")]}
     at = [(s[1], t[1]) for s, t, rel in build_edges(tables) if rel == AT_COMMIT]
     assert at == [("job:t", commits[0]["id"])]
+
+
+def _graph(*rows: tuple[str, str, str]) -> tuple[list[Any], list[Any]]:
+    """Fake graph data: one table node per table and a row node per (node id, table, text)."""
+    tables = sorted({table for _, table, _ in rows})
+    nodes: list[Any] = [(f"t-{t}", {"name": t}) for t in tables]
+    nodes += [(node, {"text": text}) for node, _, text in rows]
+    edges: list[Any] = [(node, f"t-{table}", "is_row_of", {}) for node, table, _ in rows]
+    return nodes, edges
+
+
+def _text(table: str, *lines: str) -> str:
+    return f"Table: {table}\nColumns:\n  - id (TEXT)\n\nRow Data:\n" + "\n".join(lines)
+
+
+def test_row_index_maps_table_and_id_to_node() -> None:
+    nodes, edges = _graph(("n1", "commits", _text("commits", "  id: abc", "  message: hi")))
+    assert index_rows(nodes, edges) == ({("commits", "abc"): "n1"}, set())
+
+
+def test_spoofed_id_line_in_a_later_column_is_ignored() -> None:
+    real = _text("commits", "  id: aaa", "  message: x")
+    spoof = _text("commits", "  id: bbb", "  message: x\n  id: aaa\n  y: z")
+    # the spoof also tries to fake the header
+    forged = _text("commits", "  id: ccc", "  message: x\nRow Data:\n  id: aaa")
+    nodes, edges = _graph(
+        ("n1", "commits", real), ("n2", "commits", spoof), ("n3", "commits", forged)
+    )
+    found, ambiguous = index_rows(nodes, edges)
+    assert found == {("commits", "aaa"): "n1", ("commits", "bbb"): "n2", ("commits", "ccc"): "n3"}
+    assert not ambiguous
+
+
+def test_row_whose_id_line_is_not_first_is_ignored() -> None:
+    late = _text("commits", "  message: x\n  id: aaa", "  id: zzz")
+    nodes, edges = _graph(("n1", "commits", late))
+    assert index_rows(nodes, edges) == ({}, set())
+
+
+def test_duplicate_key_on_different_nodes_is_refused() -> None:
+    text = _text("commits", "  id: aaa")
+    nodes, edges = _graph(("n1", "commits", text), ("n2", "commits", text))
+    assert index_rows(nodes, edges) == ({}, {("commits", "aaa")})
+
+
+def test_same_id_in_different_tables_is_fine() -> None:
+    nodes, edges = _graph(
+        ("n1", "commits", _text("commits", "  id: a")),
+        ("n2", "symbols", _text("symbols", "  id: a")),
+    )
+    found, ambiguous = index_rows(nodes, edges)
+    assert found == {("commits", "a"): "n1", ("symbols", "a"): "n2"}
+    assert not ambiguous
+
+
+def test_text_for_another_table_is_ignored() -> None:
+    nodes, edges = _graph(("n1", "commits", _text("symbols", "  id: a")))
+    assert index_rows(nodes, edges) == ({}, set())
+
+
+async def test_link_rows_skips_ambiguous_and_missing_rows(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    sha_a, sha_b, sha_c = "a" * 40, "b" * 40, "c" * 40
+    nodes, edges = _graph(
+        ("c1", "commits", _text("commits", f"  id: {sha_a}")),
+        ("c2", "commits", _text("commits", f"  id: {sha_a}")),  # duplicate of sha_a
+        ("c3", "commits", _text("commits", f"  id: {sha_b}")),
+        ("f1", "file_changes", _text("file_changes", f"  id: {sha_a}:x")),
+        ("f2", "file_changes", _text("file_changes", f"  id: {sha_b}:x")),
+    )
+    added: list[Any] = []
+
+    class Engine:
+        async def get_graph_data(self) -> tuple[list[Any], list[Any]]:
+            return nodes, edges
+
+        async def add_edges(self, batch: list[Any]) -> None:
+            added.extend(batch)
+
+    async def engine() -> Engine:
+        return Engine()
+
+    monkeypatch.setattr(links, "get_graph_engine", engine)
+    tables = {
+        "commits": [{"id": s} for s in (sha_a, sha_b, sha_c)],
+        "file_changes": [
+            {"id": f"{sha_a}:x", "sha": sha_a},
+            {"id": f"{sha_b}:x", "sha": sha_b},
+            {"id": f"{sha_c}:x", "sha": sha_c},
+        ],
+    }
+
+    with caplog.at_level("WARNING"):
+        summary = await link_rows(SimpleNamespace(resources=tables))
+
+    assert summary == {"sha_references_commits": 1, "missing": 1, "ambiguous": 1}
+    assert [(a, b) for a, b, _, _ in added] == [("f2", "c3")]
+    assert "ambiguous" in caplog.text
 
 
 def test_missing_tables_are_fine() -> None:

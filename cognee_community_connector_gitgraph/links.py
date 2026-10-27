@@ -14,17 +14,19 @@ wrote. The edges are named the way cognee names its own foreign-key edges,
   or the unique prefix of one (CI systems often report a short sha)
 """
 
-import re
+import logging
 from collections.abc import Iterable, Mapping
 from typing import Any
 
 from cognee.infrastructure.databases.graph import get_graph_engine
 
+logger = logging.getLogger(__name__)
+
 Row = Mapping[str, Any]
 RowKey = tuple[str, str]  # (table, id)
 Edge = tuple[RowKey, RowKey, str]  # (source row, target row, relationship)
 
-_ROW_ID = re.compile(r"^  id: (.*)$", re.MULTILINE)
+_ID_PREFIX = "  id: "
 
 
 def build_edges(tables: Mapping[str, Iterable[Row]]) -> list[Edge]:
@@ -64,22 +66,40 @@ def build_edges(tables: Mapping[str, Iterable[Row]]) -> list[Edge]:
     return sorted(edges)
 
 
-async def _row_node_ids() -> dict[RowKey, str]:
-    """Cognee's node id for each row, found through the row's ``is_row_of`` edge to its table.
+def _row_id(text: str, table: str) -> str | None:
+    """The id of a row node's text, or None unless ``id`` is the very first Row Data line.
 
-    A row node is a document chunk whose text is cognee's rendering of the row, starting
-    ``Table: <name>`` and listing ``  id: <value>`` under ``Row Data:``.
+    Cognee renders ``Table: <name>``, the schema, a blank line, ``Row Data:`` and then one
+    ``  <column>: <value>`` line per column in column order, values unescaped. Row values come
+    from untrusted repos and may contain newlines, so only the line right after the first
+    ``Row Data:`` header (everything before it is schema, not row data) can be trusted, and
+    only because ``id`` is the first column of every table.
     """
-    nodes, edges = await (await get_graph_engine()).get_graph_data()
+    head, found, data = text.partition("\nRow Data:\n")
+    if not found or not head.startswith(f"Table: {table}\n"):
+        return None
+    first = data.split("\n", 1)[0]
+    return first[len(_ID_PREFIX) :] if first.startswith(_ID_PREFIX) else None
+
+
+def index_rows(nodes: Iterable[Any], edges: Iterable[Any]) -> tuple[dict[RowKey, str], set[RowKey]]:
+    """Map each row key to its graph node id, from ``get_graph_data`` nodes and edges.
+
+    A row node is found through its ``is_row_of`` edge to the table node. A key that more than
+    one node claims (another dataset's table, or a forged row) is refused: it is returned in the
+    second set and absent from the first, so nothing links to a node that may be the wrong one.
+    """
     props = {str(node_id): p for node_id, p in nodes}
-    found: dict[RowKey, str] = {}
-    for source, target, relationship, _ in edges:
+    claims: dict[RowKey, set[str]] = {}
+    for source, target, relationship, *_ in edges:
         if relationship != "is_row_of" or str(source) not in props or str(target) not in props:
             continue
-        match = _ROW_ID.search(props[str(source)].get("text") or "")
-        if match:
-            found.setdefault((props[str(target)]["name"], match.group(1)), str(source))
-    return found
+        table = props[str(target)].get("name")
+        row_id = _row_id(props[str(source)].get("text") or "", table) if table else None
+        if row_id is not None:
+            claims.setdefault((table, row_id), set()).add(str(source))
+    found = {key: next(iter(ids)) for key, ids in claims.items() if len(ids) == 1}
+    return found, {key for key, ids in claims.items() if len(ids) > 1}
 
 
 async def link_rows(source: Any) -> dict[str, int]:
@@ -87,13 +107,20 @@ async def link_rows(source: Any) -> dict[str, int]:
 
     Safe to run again: cognee merges an edge on (from, to, relationship), so a second run changes
     nothing. Returns the edges written per relationship plus ``"missing"``, the edges skipped
-    because a row has no node in the graph (never an error).
+    because a row has no node in the graph, and ``"ambiguous"``, the edges skipped because
+    several nodes claim one end (also logged as a warning). Neither is an error.
     """
     tables = {name: list(resource) for name, resource in source.resources.items()}
-    node_ids = await _row_node_ids()
-    summary: dict[str, int] = {"missing": 0}
+    nodes, edges = await (await get_graph_engine()).get_graph_data()
+    node_ids, ambiguous = index_rows(nodes, edges)
+    if ambiguous:
+        logger.warning("ambiguous row nodes, not linked: %s", sorted(ambiguous)[:10])
+    summary: dict[str, int] = {"missing": 0, "ambiguous": 0}
     batch = []
     for from_row, to_row, relationship in build_edges(tables):
+        if from_row in ambiguous or to_row in ambiguous:
+            summary["ambiguous"] += 1
+            continue
         if from_row not in node_ids or to_row not in node_ids:
             summary["missing"] += 1
             continue
