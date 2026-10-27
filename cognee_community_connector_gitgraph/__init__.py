@@ -6,4 +6,7 @@ failures followed. This package turns that history into a dlt source cognee can
 ingest, and computes the blast radius of a pull request from the resulting graph.
 """
 
+from cognee_community_connector_gitgraph.sample import SampleRepo, build_sample_repo
+
+__all__ = ["SampleRepo", "build_sample_repo"]
 __version__ = "0.1.0"
