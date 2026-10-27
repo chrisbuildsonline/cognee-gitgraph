@@ -14,6 +14,9 @@ dependencies = [
     "networkx>=3,<4",
 ]
 
+[project.scripts]
+cognee-gitgraph = "cognee_community_connector_gitgraph.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/topoteretes/cognee"
 Repository = "https://github.com/topoteretes/cognee-community"
