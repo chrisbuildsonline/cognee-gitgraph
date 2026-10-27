@@ -1,0 +1,15 @@
+.venv
+.git
+.claude
+.omc
+docs
+PLAN.md
+CLAUDE.md
+node_modules
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.env
+.env.*
