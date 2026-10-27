@@ -84,18 +84,29 @@ A runnable version is in `examples/example.py` (`bun run example`). It remembers
 ## CLI usage
 
 ```bash
-cognee-gitgraph blast --repo PATH --base REF --head REF [--ci FILE_OR_DIR]... [--hops N] [--json] [--remember] [--verbose]
-cognee-gitgraph demo [--json] [--verbose]
+cognee-gitgraph blast --repo PATH --base REF --head REF [--ci FILE_OR_DIR]... [--hops N] [--json] [--remember] [--verbose] [--html PATH]
+cognee-gitgraph demo [--json] [--verbose] [--html PATH]
 ```
 
 - `--ci` may be repeated; each is a JUnit XML file or a directory of them.
 - `--hops` is how many caller hops to follow (default 4).
 - `--json` prints the result as JSON instead of the text report.
 - `--remember` also loads the repo into Cognee and links the rows (see below). Cognee's own progress output is hidden unless `--verbose` is given, which sends it to stderr.
+- `--html PATH` also writes the 3D page described below. The report on stdout does not change; `wrote PATH` goes to stderr.
 - The diff is `base...head` (changes on `head` since it left `base`). Symbols are read from `head`; history is read from both refs.
 - A bad repo, ref or CI path prints `error: ...` to stderr and exits with status 2.
 
 From a checkout, `bun run cli -- blast --repo . --base main --head my-branch` runs the same command.
+
+## 3D view
+
+```bash
+cognee-gitgraph demo --html blast.html
+```
+
+![The blast radius of the sample repo as a 3D graph](assets/blast-3d.png)
+
+`--html` writes one self-contained page: a WebGL graph (three.js) with a node per symbol and an arrow from each caller to what it calls. The layout is flat and seen at an angle so the labels stay readable. Red nodes are the changed symbols, amber nodes are at risk and grey nodes are safe. Each node is labelled with its name, service and hop count; hover for the full id. A side panel lists the at-risk services with their hops and a colour legend. The 3d-force-graph library (MIT, with three.js bundled) is inlined from `cognee_community_connector_gitgraph/vendor/`, so the page makes no network request. Drag to rotate, scroll to zoom. `bun run screenshot` regenerates the picture above.
 
 ## What lands in Cognee
 
@@ -141,6 +152,7 @@ await cognee.forget(dataset="gitgraph", memory_only=True)
 bun run test        # the full pytest suite
 bun run lint        # ruff check and ruff format --check
 bun run typecheck   # mypy
+bun run e2e:install # once, for the Playwright test of the 3D page (needs chromium)
 bun run docker:build
 bun run docker:test # the suite in the image, with --network none
 bun run docker:demo # the demo in the image, with --network none
