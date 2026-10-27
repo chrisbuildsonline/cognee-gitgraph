@@ -17,6 +17,7 @@ from git import GitCommandError, Repo
 from .blast import blast_radius
 from .ci_logs import parse_ci_logs
 from .git_history import extract_commits
+from .html import render_html
 from .sample import build_sample_repo
 from .symbols import extract_symbols
 
@@ -68,6 +69,9 @@ def _blast(args: argparse.Namespace) -> dict[str, Any]:
     changed = _changed_paths(args.repo, args.base, args.head)
     result = blast_radius(tables, changed, max_hops=args.hops)
     result |= {"base": args.base, "head": args.head}
+    if args.html:  # here, not in main: the demo's tables die with its temp dir
+        args.html.write_text(render_html(tables, result), encoding="utf-8")
+        print(f"wrote {args.html}", file=sys.stderr)
     if args.remember:
         sha = Repo(args.repo).commit(args.head).hexsha[:12]
         # cognee prints progress; stdout is the report, so it goes to stderr (or nowhere)
@@ -154,6 +158,7 @@ def _demo(args: argparse.Namespace) -> dict[str, Any]:
                 hops=4,
                 remember=True,
                 verbose=args.verbose,
+                html=args.html,
             )
         )
 
@@ -172,6 +177,7 @@ def _parser() -> argparse.ArgumentParser:
     for command in (blast, demo):
         command.add_argument("--json", action="store_true", help="print JSON only")
         command.add_argument("--verbose", action="store_true", help="show Cognee's own logs")
+        command.add_argument("--html", type=Path, help="also write a self-contained 3D page")
     blast.set_defaults(run=_blast)
     demo.set_defaults(run=_demo)
     return parser

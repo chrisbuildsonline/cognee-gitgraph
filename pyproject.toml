@@ -27,6 +27,8 @@ dev = [
     "pytest-asyncio",
     "ruff",
     "mypy",
+    # Must match the browsers in the Docker base image (playwright:v1.49.1-noble).
+    "playwright==1.49.1",
 ]
 
 [build-system]
@@ -39,7 +41,10 @@ packages = ["cognee_community_connector_gitgraph"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-markers = ["integration: runs real cognee with its local embedded stores"]
+markers = [
+    "integration: runs real cognee with its local embedded stores",
+    "e2e: drives the generated page in headless chromium",
+]
 
 [tool.mypy]
 ignore_missing_imports = true

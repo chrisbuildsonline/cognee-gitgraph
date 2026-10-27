@@ -6,12 +6,15 @@
     "test": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run pytest -q'",
     "lint": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run ruff check . && uv run ruff format --check .'",
     "format": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run ruff check --fix . && uv run ruff format .'",
-    "typecheck": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run mypy cognee_community_connector_gitgraph tests examples'",
+    "typecheck": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run mypy cognee_community_connector_gitgraph tests examples scripts'",
     "cli": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run cognee-gitgraph \"$@\"' _",
     "demo": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run cognee-gitgraph demo'",
     "test:file": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run pytest -q \"$@\"' _",
     "example": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run python examples/example.py'",
+    "e2e:install": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run playwright install chromium'",
+    "screenshot": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run python scripts/screenshot.py'",
     "docker:build": "docker build -t cognee-gitgraph .",
     "docker:test": "docker run --rm --network none cognee-gitgraph",
-    "docker:demo": "docker run --rm --network none cognee-gitgraph bun run demo"  }
+    "docker:demo": "docker run --rm --network none cognee-gitgraph bun run demo"
+  }
 }
