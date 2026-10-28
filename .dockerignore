@@ -3,6 +3,7 @@
 .claude
 .omc
 docs
+out
 PLAN.md
 CLAUDE.md
 node_modules

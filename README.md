@@ -153,6 +153,7 @@ bun run test        # the full pytest suite
 bun run lint        # ruff check and ruff format --check
 bun run typecheck   # mypy
 bun run e2e:install # once, for the Playwright test of the 3D page (needs chromium)
+bun run demo:video  # out/cognee-gitgraph-demo.mp4: a narrated recording of the demo (needs the network for edge-tts, and ffmpeg)
 bun run docker:build
 bun run docker:test # the suite in the image, with --network none
 bun run docker:demo # the demo in the image, with --network none

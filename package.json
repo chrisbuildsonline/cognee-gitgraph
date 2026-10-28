@@ -13,6 +13,8 @@
     "example": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run python examples/example.py'",
     "e2e:install": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run playwright install chromium'",
     "screenshot": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run python scripts/screenshot.py'",
+    "demo:video": "bash -c 'export PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run python scripts/demo_video.py'",
+    "demo:video:fast": "bash -c 'export DEMO_VIDEO_SKIP_GATE=1 PATH=$HOME/.local/bin:$HOME/.cargo/bin:$PATH; uv run python scripts/demo_video.py'",
     "docker:build": "docker build -t cognee-gitgraph .",
     "docker:test": "docker run --rm --network none cognee-gitgraph",
     "docker:demo": "docker run --rm --network none cognee-gitgraph bun run demo"
