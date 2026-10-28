@@ -48,6 +48,26 @@ def test_every_bun_script_in_the_readme_exists() -> None:
     assert named <= set(scripts), named - set(scripts)
 
 
+def test_the_readme_links_the_mergetober_proposal_issue() -> None:
+    """Given the README, then it links the Path B proposal issue."""
+    assert "https://github.com/topoteretes/cognee/issues/6329" in README
+
+
+def test_every_docker_script_command_is_in_the_readme_verbatim() -> None:
+    """Given the docker:* scripts in package.json, then each command string is in the README."""
+    scripts = json.loads((ROOT / "package.json").read_text())["scripts"]
+    docker = {n: c for n, c in scripts.items() if n.startswith("docker:")}
+    assert docker
+    missing = {n: c for n, c in docker.items() if c not in README}
+    assert not missing, missing
+
+
+@pytest.mark.parametrize("word", ["todo", "tbd", "coming soon"])
+def test_the_readme_has_no_placeholder_text(word: str) -> None:
+    """Given the README, then it has no TODO, TBD or "coming soon" in any case."""
+    assert word not in README.lower()
+
+
 def test_the_blast_usage_line_lists_exactly_the_parser_flags() -> None:
     """Given the README usage line, then its flags are the blast parser's flags, no more or less."""
     usage = next(line for line in README.splitlines() if line.startswith("cognee-gitgraph blast"))

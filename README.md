@@ -1,5 +1,7 @@
 # Cognee GitGraph
 
+A pull request that touches a shared helper can break services several call hops away; this shows which ones before you merge, deterministically and with no LLM.
+
 A Cognee community connector that loads a git repository into Cognee's graph: commits, file changes, Python symbols and references, and CI test failures from JUnit XML. From that data it computes the blast radius of a pull request: which functions call the code you changed, how many hops away they are, which top-level services they live in, and which CI failures belong to those services. The blast radius is plain graph traversal over the extracted rows, so the default path makes zero LLM calls and needs no API key. Loading into Cognee is optional and also runs without a key, on Cognee's local embedded stores, its local fastembed embedding model and, for its own graph extraction step, its local GLiNER model. On the very first load Cognee downloads those models and installs CPU-only PyTorch (about 200 MB), so that one run needs the network; the Docker image does this at build time.
 
 ## Quick start
@@ -154,12 +156,23 @@ bun run lint        # ruff check and ruff format --check
 bun run typecheck   # mypy
 bun run e2e:install # once, for the Playwright test of the 3D page (needs chromium)
 bun run demo:video  # out/cognee-gitgraph-demo.mp4: a narrated recording of the demo (needs the network for edge-tts, and ffmpeg)
-bun run docker:build
-bun run docker:test # the suite in the image, with --network none
-bun run docker:demo # the demo in the image, with --network none
 ```
 
 The tests need no API key. They need the network only on the first run, for the local models described above (fastembed `BAAI/bge-small-en-v1.5`, GLiNER `fastino/gliner2.5-base-v1`, CPU-only PyTorch). The Docker image fetches all of them while it is built, which is why the suite and the demo run there with the network disabled.
+
+## Run with Docker
+
+```bash
+docker build -t cognee-gitgraph .
+docker run --rm --network none cognee-gitgraph
+docker run --rm --network none cognee-gitgraph bun run demo
+```
+
+The image bakes in the models at build time, so both runs work with the network off (`--network none`). The default command runs the test suite; the second `docker run` runs the demo. Each has a script: `bun run docker:build`, `bun run docker:test` and `bun run docker:demo`.
+
+## Mergetober contribution
+
+This is the Path B proposal for Mergetober: a new connector, proposed in <https://github.com/topoteretes/cognee/issues/6329>. The package is proposed for `topoteretes/cognee-community` at `packages/connector/gitgraph`.
 
 ## Stack
 
