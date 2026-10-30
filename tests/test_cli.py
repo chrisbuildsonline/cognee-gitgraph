@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from git import Repo
 
-from cognee_community_connector_gitgraph import build_sample_repo
+from cognee_community_connector_gitgraph import build_sample_repo, cli
 from cognee_community_connector_gitgraph.cli import main
 
 CI = Path(__file__).parent / "fixtures" / "ci"
@@ -146,6 +146,28 @@ def test_usage_errors_exit_2(capsys: pytest.CaptureFixture[str]) -> None:
         main(["blast"])
     assert exc.value.code == 2
     assert "usage" in capsys.readouterr().err
+
+
+def test_quiet_run_drops_fastembed_logs(monkeypatch: pytest.MonkeyPatch) -> None:
+    # fastembed logs through loguru, which LOG_LEVEL does not reach: fastembed 0.9.1 logs a
+    # cache notice at INFO on each model load when an older fastembed filled the HF cache.
+    from loguru import logger
+
+    names: list[str] = []
+    sink = logger.add(lambda message: names.append(message.record["name"] or ""))
+
+    def run(args: Any) -> dict[str, Any]:
+        exec("from loguru import logger\nlogger.info('cache notice')", {"__name__": "fastembed.x"})
+        raise ValueError("stop")
+
+    monkeypatch.setattr(cli, "_blast", run)
+    monkeypatch.setenv("LOG_LEVEL", "ERROR")  # so main() leaves the env as it found it
+    try:
+        assert main(_args(Path("."))) == 2
+    finally:
+        logger.remove(sink)
+        logger.enable("fastembed")
+    assert "fastembed.x" not in names
 
 
 def _script() -> str:

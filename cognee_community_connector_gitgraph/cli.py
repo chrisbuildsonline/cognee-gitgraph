@@ -187,6 +187,10 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if not args.verbose:  # cognee reads this when it is first imported, so set it before then
         os.environ.setdefault("LOG_LEVEL", "ERROR")
+        with contextlib.suppress(ImportError):  # fastembed logs through loguru, not LOG_LEVEL
+            from loguru import logger
+
+            logger.disable("fastembed")
     try:
         result = args.run(args)
     except ValueError as exc:
