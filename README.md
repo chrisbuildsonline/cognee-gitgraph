@@ -174,6 +174,8 @@ The image bakes in the models at build time, so both runs work with the network 
 
 This is the Path B proposal for Mergetober: a new connector, proposed in <https://github.com/topoteretes/cognee/issues/6329>. The package is proposed for `topoteretes/cognee-community` at `packages/connector/gitgraph`.
 
+A short write-up of how it works on the sample repo: [What breaks if I change verify_token?](blog/post.md)
+
 ## Stack
 
 Python 3.12, cognee 1.6.5, dlt, GitPython, NetworkX and the standard library `ast` module. Python files only: there is no Tree-sitter and there is no web server.
