@@ -37,6 +37,8 @@ EXCLUDED = [
     "bun.lock",
     "scripts",
     "assets",
+    "blog",
+    "tests/test_blog.py",
     "tests/test_readme.py",
     "tests/test_demo_video.py",
     "tests/test_html_e2e.py",
