@@ -68,7 +68,14 @@ def _walk(path: str, tree: ast.Module, modules: dict[str, str]) -> tuple[list[Ro
     def symbol(kind: str, qualname: str, node: ast.AST) -> str:
         sid = f"{path}::{qualname}"
         symbols.append(
-            {"id": sid, "kind": kind, "name": qualname, "file": path, "line": node.lineno}  # type: ignore[attr-defined]
+            {
+                "id": sid,
+                "kind": kind,
+                "name": qualname,
+                "file": path,
+                "line": node.lineno,  # type: ignore[attr-defined]
+                "end_line": node.end_lineno,  # type: ignore[attr-defined]
+            }
         )
         return sid
 

@@ -60,6 +60,7 @@ def test_sample_symbols_at_main(sample: SampleRepo) -> None:
         "name": "make_token",
         "file": "shared/auth.py",
         "line": 4,
+        "end_line": 5,
     }
     assert by_id["shared/auth.py::verify_token"]["line"] == 8
     assert by_id["search/index.py::search"]["line"] == 4
@@ -412,6 +413,37 @@ def test_non_repo_raises(tmp_path: Path) -> None:
         extract_symbols(tmp_path, "main")
 
 
+def test_end_line_of_decorated_function_class_and_method(tmp_path: Path) -> None:
+    src = (
+        "import functools\n"  # 1
+        "\n"  # 2
+        "@functools.cache\n"  # 3
+        "def deco(x):\n"  # 4
+        "    y = x\n"  # 5
+        "    return y\n"  # 6
+        "\n"  # 7
+        "class A:\n"  # 8
+        "    def m(self):\n"  # 9
+        "        return 1\n"  # 10
+        "\n"  # 11
+        "    def n(self):\n"  # 12
+        "        return 2\n"  # 13
+    )
+    symbols = _extract(tmp_path, {"m.py": src})["symbols"]
+    assert [(s["id"], s["line"], s["end_line"]) for s in symbols] == [
+        ("m.py::deco", 4, 6),
+        ("m.py::A", 8, 13),
+        ("m.py::A.m", 9, 10),
+        ("m.py::A.n", 12, 13),
+    ]
+
+
+def test_end_line_of_sample_verify_token(sample: SampleRepo) -> None:
+    by_id = {s["id"]: s for s in extract_symbols(sample.path, "main")["symbols"]}
+    verify = by_id["shared/auth.py::verify_token"]
+    assert (verify["line"], verify["end_line"]) == (8, 9)
+
+
 # --- fuzz -------------------------------------------------------------------------------------
 
 _MODULES = {"shared.auth": "shared/auth.py", "shared": "shared/__init__.py", "a.b.c": "a/b/c.py"}
@@ -423,7 +455,7 @@ def _check(path: str, source: bytes) -> None:
     if reason is not None:
         assert symbols == [] and refs == []
     for s in symbols:
-        assert set(s) == {"id", "kind", "name", "file", "line"}
+        assert set(s) == {"id", "kind", "name", "file", "line", "end_line"}
         assert s["kind"] in {"function", "class", "method"}
         assert isinstance(s["id"], str) and isinstance(s["name"], str)
         assert s["file"] == path and isinstance(s["line"], int)
