@@ -95,6 +95,24 @@ def show(repo: Path, branch: str, path: str) -> str:
     return git(repo, "show", f"{branch}:{path}")
 
 
+def test_connector_tests_do_not_import_blast_at_module_level() -> None:
+    """The first PR has no blast.py, so collecting its tests must not import it."""
+    import ast
+
+    for name in FIRST_TESTS:
+        if name == "conftest":
+            continue
+        tree = ast.parse((REPO / "tests" / f"{name}.py").read_text())
+        for node in tree.body:
+            if not isinstance(node, ast.ImportFrom) or not node.module:
+                continue
+            imported = {alias.name for alias in node.names}
+            assert "blast" not in node.module, name
+            assert not (
+                node.module == "cognee_community_connector_gitgraph" and "blast_radius" in imported
+            ), name
+
+
 def test_both_branches_exist(comm: tuple[Path, Path]) -> None:
     repo, _ = comm
     branches = git(repo, "branch", "--format=%(refname:short)").split()

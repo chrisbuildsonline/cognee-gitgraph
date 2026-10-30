@@ -12,7 +12,6 @@ from cognee.infrastructure.databases.graph import get_graph_engine
 from git import Repo
 
 from cognee_community_connector_gitgraph import (
-    blast_radius,
     build_sample_repo,
     gitgraph_source,
     link_rows,
@@ -176,6 +175,10 @@ async def test_call_chain_is_walkable_through_the_new_edges(tmp_path: Path) -> N
 
 
 async def test_blast_over_the_cognee_graph_equals_the_row_blast(tmp_path: Path) -> None:
+    # The connector-only PR has no blast module; this check belongs to the blast-radius PR.
+    pytest.importorskip("cognee_community_connector_gitgraph.blast")
+    from cognee_community_connector_gitgraph.blast import blast_radius
+
     repo = build_sample_repo(tmp_path / "repo").path
     source = await _remember(repo, tmp_path)
     await link_rows(source)

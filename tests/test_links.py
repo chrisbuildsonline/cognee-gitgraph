@@ -8,7 +8,6 @@ from typing import Any
 import pytest
 
 from cognee_community_connector_gitgraph import build_sample_repo, gitgraph_source, links
-from cognee_community_connector_gitgraph.blast import blast_radius
 from cognee_community_connector_gitgraph.links import (
     build_edges,
     graph_tables,
@@ -287,6 +286,10 @@ def test_graph_tables_reference_with_a_missing_owner_edge_has_no_file() -> None:
 
 
 def test_graph_tables_blast_equals_the_row_blast(tables: Tables) -> None:
+    # The connector-only PR has no blast module; this check belongs to the blast-radius PR.
+    pytest.importorskip("cognee_community_connector_gitgraph.blast")
+    from cognee_community_connector_gitgraph.blast import blast_radius
+
     graph = graph_tables(*_linked(tables))
     assert len(graph["symbols"]) == len(tables["symbols"])
     assert len(graph["references"]) == len(tables["references"])
