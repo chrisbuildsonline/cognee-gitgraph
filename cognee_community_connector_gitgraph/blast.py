@@ -41,8 +41,10 @@ def _changed_symbols(symbols: list[Row], changed: list[str]) -> set[str]:
         path, line = _split(item)
         rows = by_file.get(path, [])
         # ponytail: symbols carry only a start line, so a line after a function's end still maps to
-        # it; add end_lineno to the symbol rows if that precision ever matters.
-        above = [r for r in rows if line is not None and r["line"] <= line]
+        # it; add end_lineno to the symbol rows if that precision ever matters. Rows read back from
+        # Cognee's graph have no line, so ``path:line`` there hits every symbol in the file.
+        lined = [r for r in rows if r.get("line") is not None]
+        above = [r for r in lined if line is not None and r["line"] <= line]
         if above:
             hit.add(max(above, key=lambda r: (r["line"], r["id"]))["id"])
         else:

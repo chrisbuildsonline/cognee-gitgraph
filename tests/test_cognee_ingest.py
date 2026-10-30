@@ -11,7 +11,13 @@ import pytest
 from cognee.infrastructure.databases.graph import get_graph_engine
 from git import Repo
 
-from cognee_community_connector_gitgraph import build_sample_repo, gitgraph_source, link_rows
+from cognee_community_connector_gitgraph import (
+    blast_radius,
+    build_sample_repo,
+    gitgraph_source,
+    link_rows,
+)
+from cognee_community_connector_gitgraph.links import graph_tables
 
 pytestmark = pytest.mark.integration
 
@@ -167,3 +173,22 @@ async def test_call_chain_is_walkable_through_the_new_edges(tmp_path: Path) -> N
     }
     assert "search/index.py::search" not in set().union(*callers_of.values())
     assert "search/index.py::search" not in callers_of
+
+
+async def test_blast_over_the_cognee_graph_equals_the_row_blast(tmp_path: Path) -> None:
+    repo = build_sample_repo(tmp_path / "repo").path
+    source = await _remember(repo, tmp_path)
+    await link_rows(source)
+    graph = graph_tables(*await (await get_graph_engine()).get_graph_data())
+    tables = {name: list(resource) for name, resource in source.resources.items()}
+
+    walked = blast_radius(graph, ["shared/auth.py"])
+    rows = blast_radius(tables, ["shared/auth.py"])
+
+    for key in ("changed_symbols", "symbols", "files", "services"):
+        assert walked[key] == rows[key], key
+    assert {s["name"]: s["hops"] for s in walked["services"]} == {
+        "billing": 1,
+        "orders": 2,
+        "notifications": 4,
+    }

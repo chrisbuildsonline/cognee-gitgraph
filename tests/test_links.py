@@ -8,7 +8,13 @@ from typing import Any
 import pytest
 
 from cognee_community_connector_gitgraph import build_sample_repo, gitgraph_source, links
-from cognee_community_connector_gitgraph.links import build_edges, index_rows, link_rows
+from cognee_community_connector_gitgraph.blast import blast_radius
+from cognee_community_connector_gitgraph.links import (
+    build_edges,
+    graph_tables,
+    index_rows,
+    link_rows,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures" / "ci"
 
@@ -214,3 +220,78 @@ async def test_link_rows_skips_ambiguous_and_missing_rows(
 def test_missing_tables_are_fine() -> None:
     assert build_edges({}) == []
     assert build_edges({"commits": [{"id": "a" * 40}]}) == []
+
+
+def _linked(tables: Tables) -> tuple[list[Any], list[Any]]:
+    """Fake graph data as cognee holds it after ``link_rows``: one node per row, keyed by id."""
+    nodes, edges = _graph(
+        *[(f"{t}/{r['id']}", t, _text(t, f"  id: {r['id']}")) for t in tables for r in tables[t]]
+    )
+    edges += [(f"{a[0]}/{a[1]}", f"{b[0]}/{b[1]}", rel, {}) for a, b, rel in build_edges(tables)]
+    return nodes, edges
+
+
+def test_graph_tables_rebuilds_symbols_and_references_from_ids_and_edges() -> None:
+    verify = "shared/auth.py::verify_token"
+    charge = "billing/invoice.py::charge"
+    odd = "a::b/c.py::Cls.m"  # a path may hold "::"; a qualname never does
+    call = f"billing/invoice.py:{charge}->{verify}:call"
+    imp = f"billing/invoice.py:->{verify}:import"  # module level: no from_symbol edge
+    dup = "x/y.py::dup"
+    nodes, edges = _graph(
+        ("s1", "symbols", _text("symbols", f"  id: {verify}", "  line: 999")),
+        ("s2", "symbols", _text("symbols", f"  id: {charge}")),
+        ("s3", "symbols", _text("symbols", f"  id: {odd}")),
+        ("d1", "symbols", _text("symbols", f"  id: {dup}")),
+        ("d2", "symbols", _text("symbols", f"  id: {dup}")),  # ambiguous: refused
+        ("r1", "references", _text("references", f"  id: {call}")),
+        ("r2", "references", _text("references", f"  id: {imp}")),
+        ("r3", "references", _text("references", f"  id: x/z.py:->{dup}:import")),
+        ("r4", "references", _text("references", "  id: no/edges.py:->x:call")),
+    )
+    edges += [
+        ("r1", "s2", FROM_SYMBOL, {}),
+        ("r1", "s1", TO_SYMBOL, {}),
+        ("r2", "s1", TO_SYMBOL, {}),
+        ("r3", "d1", TO_SYMBOL, {}),
+        ("r3", "d2", TO_SYMBOL, {}),
+    ]
+
+    invoice = "billing/invoice.py"
+    assert graph_tables(nodes, edges) == {
+        "symbols": [
+            {"id": odd, "file": "a::b/c.py"},
+            {"id": charge, "file": invoice},
+            {"id": verify, "file": "shared/auth.py"},
+        ],
+        "references": [
+            {"id": imp, "from_symbol": None, "to_symbol": verify, "from_file": invoice},
+            {"id": call, "from_symbol": charge, "to_symbol": verify, "from_file": invoice},
+        ],
+    }
+
+
+def test_graph_tables_reference_with_a_missing_owner_edge_has_no_file() -> None:
+    # an owned call whose from_symbol edge is gone must not pass for a module-level import
+    verify = "shared/auth.py::verify_token"
+    call = f"billing/invoice.py:billing/invoice.py::charge->{verify}:call"
+    nodes, edges = _graph(
+        ("s1", "symbols", _text("symbols", f"  id: {verify}")),
+        ("r1", "references", _text("references", f"  id: {call}")),
+    )
+    edges.append(("r1", "s1", TO_SYMBOL, {}))
+
+    [ref] = graph_tables(nodes, edges)["references"]
+    assert ref["from_symbol"] is None
+    assert ref["from_file"] is None
+
+
+def test_graph_tables_blast_equals_the_row_blast(tables: Tables) -> None:
+    graph = graph_tables(*_linked(tables))
+    assert len(graph["symbols"]) == len(tables["symbols"])
+    assert len(graph["references"]) == len(tables["references"])
+    for changed in (["shared/auth.py"], ["shared/auth.py:3"]):
+        rows = blast_radius(tables, changed)
+        walked = blast_radius(tables | graph, changed)
+        for key in ("symbols", "files", "services"):
+            assert walked[key] == rows[key], key

@@ -109,6 +109,48 @@ def index_rows(nodes: Iterable[Any], edges: Iterable[Any]) -> tuple[dict[RowKey,
     return found, {key for key, ids in claims.items() if len(ids) > 1}
 
 
+def graph_tables(nodes: Iterable[Any], edges: Iterable[Any]) -> dict[str, list[dict[str, Any]]]:
+    """The ``symbols`` and ``references`` tables, read back from the graph after ``link_rows``.
+
+    Rows come from ``index_rows`` (ambiguous keys refused) and the reference -> symbol edges
+    ``link_rows`` wrote. Only ids are trusted, so every other column is derived from them: a
+    symbol id is ``{path}::{qualname}`` and a qualname never holds ``::``; a reference id is
+    ``{path}:{owner}->{target}:{kind}``, so one made at module level (no owner) ends in
+    ``:->{target}:{kind}`` and gives ``from_file``. Symbols carry no ``line``, so blast_radius
+    maps a ``path:line`` item to every symbol in the file.
+    """
+    nodes = list(nodes)
+    edges = list(edges)
+    found, _ = index_rows(nodes, edges)
+    key_of = {node: key for key, node in found.items()}
+    ends: dict[tuple[str, str], str] = {}  # (reference id, relationship) -> symbol id
+    for source, target, relationship, *_ in edges:
+        ref, symbol = key_of.get(str(source)), key_of.get(str(target))
+        if ref and symbol and ref[0] == "references" and symbol[0] == "symbols":
+            ends[(ref[1], relationship)] = symbol[1]
+    symbols = sorted(key[1] for key in found if key[0] == "symbols")
+    references = []
+    for rid in sorted(key[1] for key in found if key[0] == "references"):
+        target = ends.get((rid, "to_symbol_references_symbols"))
+        if target is None:
+            continue
+        owner = ends.get((rid, "from_symbol_references_symbols"))
+        head = rid.rpartition(":")[0]
+        if owner is not None:
+            from_file: str | None = owner.rpartition("::")[0]
+        elif head.endswith(f":->{target}"):
+            from_file = head[: -len(f":->{target}")]
+        else:
+            from_file = None  # an owned reference whose owner edge is missing
+        references.append(
+            {"id": rid, "from_symbol": owner, "to_symbol": target, "from_file": from_file}
+        )
+    return {
+        "symbols": [{"id": sid, "file": sid.rpartition("::")[0]} for sid in symbols],
+        "references": references,
+    }
+
+
 async def link_rows(source: Any) -> dict[str, int]:
     """Write the edges of ``build_edges`` between the row nodes of an already remembered ``source``.
 
