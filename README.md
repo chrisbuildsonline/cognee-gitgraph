@@ -219,7 +219,10 @@ The image bakes in the models at build time, so both runs work with the network 
 
 This is the Path B proposal for Mergetober: a new connector, proposed in <https://github.com/topoteretes/cognee/issues/6329>. The package is proposed for `topoteretes/cognee-community` at `packages/connector/gitgraph`.
 
-A short write-up of how it works on the sample repo: [What breaks if I change verify_token?](blog/post.md)
+- Connector: <https://github.com/topoteretes/cognee-community/pull/560>
+- Blast radius, CLI and 3D page: <https://github.com/topoteretes/cognee-community/pull/561> (merge 560 first)
+
+A short write-up of how it works on the sample repo: [What breaks if I change verify_token?](blog/post.md), published at <https://dev.to/chrisbuildsonline/what-breaks-if-i-change-verifytoken-1nod>.
 
 ## Stack
 
