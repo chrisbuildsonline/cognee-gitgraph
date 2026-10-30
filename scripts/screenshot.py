@@ -27,9 +27,8 @@ def run() -> None:
             page = browser.new_page(viewport={"width": 1600, "height": 900})
             page.goto(html.as_uri())
             page.wait_for_function("window.graph && window.graph.graphData().nodes.length > 0")
+            # the page lays the graph out and fits it to the stage itself
             page.wait_for_timeout(3000)
-            page.evaluate("() => { window.graph.zoomToFit(400, 40); }")
-            page.wait_for_timeout(1000)
             page.screenshot(path=str(OUT))
             browser.close()
 
