@@ -67,24 +67,33 @@ def _blast(args: argparse.Namespace) -> dict[str, Any]:
     if args.ci:
         tables["ci_failures"] = parse_ci_logs(args.ci)["ci_failures"]
     changed = _changed_paths(args.repo, args.base, args.head)
-    result = blast_radius(tables, changed, max_hops=args.hops)
-    result |= {"base": args.base, "head": args.head}
-    if args.html:  # here, not in main: the demo's tables die with its temp dir
-        args.html.write_text(render_html(tables, result), encoding="utf-8")
-        print(f"wrote {args.html}", file=sys.stderr)
+    result = blast_radius(tables, changed, max_hops=args.hops) | {"computed_from": "rows"}
     if args.remember:
         sha = Repo(args.repo).commit(args.head).hexsha[:12]
         # cognee prints progress; stdout is the report, so it goes to stderr (or nowhere)
         with contextlib.redirect_stdout(sys.stderr if args.verbose else io.StringIO()):
-            result["cognee"] = asyncio.run(_remember(args, refs, f"gitgraph-{sha}"))
+            summary, graph = asyncio.run(_remember(args, refs, f"gitgraph-{sha}"))
+        # The at-risk walk is read back from Cognee's graph; history and CI still come from rows.
+        tables |= graph
+        walked = blast_radius(tables, changed, max_hops=args.hops)
+        if any(walked[key] != result[key] for key in ("symbols", "files", "services")):
+            print("warning: the blast over Cognee's graph differs from the rows'", file=sys.stderr)
+        result = walked | {"computed_from": "cognee graph", "cognee": summary}
+    result |= {"base": args.base, "head": args.head}
+    if args.html:  # here, not in main: the demo's tables die with its temp dir
+        args.html.write_text(render_html(tables, result), encoding="utf-8")
+        print(f"wrote {args.html}", file=sys.stderr)
     return result
 
 
-async def _remember(args: argparse.Namespace, refs: list[str], dataset: str) -> dict[str, Any]:
+async def _remember(
+    args: argparse.Namespace, refs: list[str], dataset: str
+) -> tuple[dict[str, Any], dict[str, list[dict[str, Any]]]]:
+    """Remember the repo and link its rows; returns the summary and the graph's symbol tables."""
     import cognee
     from cognee.infrastructure.databases.graph import get_graph_engine
 
-    from .links import link_rows
+    from .links import graph_tables, link_rows
     from .source import gitgraph_source
 
     source = gitgraph_source(args.repo, refs=refs, ci_logs=args.ci or None)
@@ -95,7 +104,8 @@ async def _remember(args: argparse.Namespace, refs: list[str], dataset: str) -> 
     nodes, edges = await (await get_graph_engine()).get_graph_data()
     tables = {str(node_id): props["name"] for node_id, props in nodes}
     rows = Counter(tables[str(target)] for _, target, name, _ in edges if name == "is_row_of")
-    return {"dataset": dataset, "rows": dict(sorted(rows.items())), "links": links}
+    summary = {"dataset": dataset, "rows": dict(sorted(rows.items())), "links": links}
+    return summary, graph_tables(nodes, edges)
 
 
 def _report(result: dict[str, Any]) -> str:
@@ -112,6 +122,8 @@ def _report(result: dict[str, Any]) -> str:
     ]
     lines += ["  none"] * (not result["services"])
     lines += [f"At-risk symbols: {len(result['symbols'])} in {len(result['files'])} files"]
+    walked = "Cognee's graph" if result["computed_from"] == "cognee graph" else "the extracted rows"
+    lines += [f"Callers found by walking {walked}"]
     if result["co_changed"]:
         lines += ["", "Co-changed files:"]
         lines += [

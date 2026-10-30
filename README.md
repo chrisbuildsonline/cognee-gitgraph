@@ -23,6 +23,7 @@ At-risk services:
   notifications  4 hops  shared/auth.py::verify_token -> shared/session.py::load_session -> orders/cart.py::get_cart -> orders/checkout.py::checkout -> notifications/receipts.py::send_receipt
   orders  2 hops  shared/auth.py::verify_token -> shared/session.py::load_session -> orders/cart.py::get_cart
 At-risk symbols: 5 in 5 files
+Callers found by walking Cognee's graph
 
 Co-changed files:
   billing/invoice.py  (1 shared commit)
@@ -47,6 +48,8 @@ Links between rows:
 ```
 
 The demo uses a throwaway Cognee home in a temp directory and leaves nothing behind. Its commits use a fixed author and date, so the SHAs (and the dataset name) are the same on every run.
+
+Which path does what: without `--remember`, `blast` walks the extracted rows in memory and never imports Cognee. With `--remember` (the demo always passes it), the rows go into Cognee, `link_rows` adds the edges between them, and the walk is then read back from Cognee's graph: the symbols and references are rebuilt from the row nodes and the `from_symbol` and `to_symbol` edges, and only history and CI failures still come from the rows. The `Callers found by walking ...` line says which path ran, and `--json` has it as `computed_from` (`rows` or `cognee graph`). If the graph walk and the row walk disagree, a warning goes to stderr.
 
 ## Install as a package
 

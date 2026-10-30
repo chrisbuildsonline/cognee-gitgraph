@@ -182,3 +182,12 @@ def test_the_text_report_shows_services_path_ci_and_graph(text_demo: dict[str, A
         assert f"  {row}\n" in out
     assert "  symbols: 8" in out
     assert "sha_references_commits: 15" in out
+
+
+@pytest.mark.integration
+def test_the_blast_is_read_back_from_cognees_graph(
+    text_demo: dict[str, Any], json_demo: dict[str, Any]
+) -> None:
+    """Given the demo remembers the repo, when it reports, then it walked Cognee's graph."""
+    assert json.loads(json_demo["stdout"])["computed_from"] == "cognee graph"
+    assert "Callers found by walking Cognee's graph\n" in text_demo["stdout"]

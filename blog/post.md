@@ -4,7 +4,7 @@ You open a pull request that touches `shared/auth.py`. It is a small change: `ve
 
 The question nobody can answer from the diff is who calls `verify_token`, and who calls them. In a monorepo the answer is usually "more than you think", and you find out from a red build in a service you did not touch, or from production.
 
-I built a small Cognee community connector, Cognee GitGraph, to answer that question before the merge. It reads a git repository, parses the Python code into symbols and call references, reads CI test results from JUnit XML, and loads all of it into Cognee's graph memory. From the same rows it computes the blast radius of a branch: which functions can reach the code you changed, how many hops away, which services they live in, and which CI failures belong to those services. It makes no LLM calls and needs no API key.
+I built a small Cognee community connector, Cognee GitGraph, to answer that question before the merge. It reads a git repository, parses the Python code into symbols and call references, reads CI test results from JUnit XML, and loads all of it into Cognee's graph memory. From that data it computes the blast radius of a branch: which functions can reach the code you changed, how many hops away, which services they live in, and which CI failures belong to those services. It makes no LLM calls and needs no API key.
 
 ## The demo
 
@@ -20,6 +20,7 @@ At-risk services:
   notifications  4 hops  shared/auth.py::verify_token -> shared/session.py::load_session -> orders/cart.py::get_cart -> orders/checkout.py::checkout -> notifications/receipts.py::send_receipt
   orders  2 hops  shared/auth.py::verify_token -> shared/session.py::load_session -> orders/cart.py::get_cart
 At-risk symbols: 5 in 5 files
+Callers found by walking Cognee's graph
 
 Co-changed files:
   billing/invoice.py  (1 shared commit)
@@ -73,7 +74,7 @@ Cognee loads a dlt source through its relational-manifest path: each row becomes
 
 There is one gap. Cognee draws row-to-row edges only from foreign keys in the staging database, and dlt's SQL destination creates none, so a fresh load has rows connected to their tables and to nothing else. `link_rows` fills that in. It reads the graph, finds each row node through its edge to the table node, and writes edges named the way Cognee names its own foreign-key edges: `sha_references_commits` from a file change to its commit, `from_symbol_references_symbols` and `to_symbol_references_symbols` from a call reference to the two functions it connects, and `commit_sha_references_commits` from a CI failure to its commit. Running it again writes nothing new. An edge whose row node it cannot find, or finds more than once, is skipped and counted as `missing` or `ambiguous` instead of being guessed at.
 
-To be precise about what does what: the blast radius is computed over the extracted rows, with a plain breadth-first walk over a NetworkX graph of callers. It is a pure function and does not need Cognee at all. With `--remember` (the demo always does this) the CLI also loads those rows into a Cognee dataset named `gitgraph-<first 12 characters of the head sha>`, which is the `gitgraph-b73e5edafa07` you see above. The sample repo uses a fixed author and date for every commit, so that name is the same on every machine.
+To be precise: the walk is a plain breadth-first search over a NetworkX graph of callers. Without `--remember` it runs on the extracted rows and never imports Cognee. With `--remember` (the demo always does) the CLI loads the rows into a Cognee dataset named `gitgraph-<first 12 characters of the head sha>`, the `gitgraph-b73e5edafa07` above, runs `link_rows`, then reads the symbols and reference edges back from Cognee's graph and walks those. That is the "Callers found by walking Cognee's graph" line. It trusts only the row ids, and warns if the two walks disagree. The sample repo uses a fixed author and date for every commit, so that name is the same on every machine.
 
 ## Proving it makes no LLM calls
 

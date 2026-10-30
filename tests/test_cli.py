@@ -25,7 +25,10 @@ BLAST_KEYS = {
     "services",
     "co_changed",
     "ci_failures",
+    "computed_from",
 }
+FROM_GRAPH = "Callers found by walking Cognee's graph"
+FROM_ROWS = "Callers found by walking the extracted rows"
 SEND_RECEIPT_PATH = (
     "shared/auth.py::verify_token -> shared/session.py::load_session -> "
     "orders/cart.py::get_cart -> orders/checkout.py::checkout -> "
@@ -70,6 +73,7 @@ def test_text_report_lists_services_and_the_four_hop_path(
     assert "notifications  4 hops  " + SEND_RECEIPT_PATH in out
     assert "billing  1 hop  " in out
     assert "search" not in out
+    assert FROM_ROWS in out
 
 
 def test_json_has_exactly_the_blast_keys_and_services(
@@ -78,6 +82,7 @@ def test_json_has_exactly_the_blast_keys_and_services(
     result = _json(capsys, repo)
 
     assert set(result) == BLAST_KEYS
+    assert result["computed_from"] == "rows"
     assert result["base"] == "main"
     assert result["head"] == "feature/rotate-tokens"
     assert result["max_hops"] == 4
@@ -211,6 +216,7 @@ def test_one_shared_commit_is_singular() -> None:
         "files": [],
         "co_changed": [{"path": "x.py", "shas": ["1"]}, {"path": "y.py", "shas": ["1", "2"]}],
         "ci_failures": [],
+        "computed_from": "rows",
     }
     report = _report(result)
 
@@ -329,6 +335,25 @@ def test_remember_reports_rows_and_links(repo: Path, tmp_path: Path) -> None:
     assert text.returncode == 0, text.stderr
     assert "Cognee graph" in text.stdout
     assert "commits: 8" in text.stdout
+    assert FROM_GRAPH in text.stdout
+    assert "differs from" not in text.stderr
+
+
+@pytest.mark.integration
+def test_remember_blast_is_read_from_the_cognee_graph(
+    repo: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rows = _json(capsys, repo, "--ci", str(CI))
+    walked = _remember(tmp_path / "cognee", repo, "--ci", str(CI))
+
+    assert walked["computed_from"] == "cognee graph"
+    for key in ("changed_symbols", "symbols", "files", "services", "co_changed", "ci_failures"):
+        assert walked[key] == rows[key], key
+    assert {s["name"]: s["hops"] for s in walked["services"]} == {
+        "billing": 1,
+        "orders": 2,
+        "notifications": 4,
+    }
 
 
 @pytest.mark.integration
