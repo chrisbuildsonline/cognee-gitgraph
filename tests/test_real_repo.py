@@ -63,4 +63,4 @@ def test_the_fixed_functions_changed_and_their_callers_are_at_risk() -> None:
     hops = {s["id"]: s["hops"] for s in result["symbols"] if s["path"][0] in FIXED}
     assert hops["nanochat/dataloader.py::tokenizing_distributed_data_loader_with_state"] == 1
     assert hops["nanochat/dataloader.py::tokenizing_distributed_data_loader"] == 2
-    assert {s["name"] for s in result["services"]} == {"dev", "scripts", "tasks", "tests"}
+    assert {s["name"] for s in result["services"]} == {"scripts"}

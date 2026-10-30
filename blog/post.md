@@ -13,7 +13,7 @@ The package ships a sample repo so you can see the whole thing in one command. I
 ```text
 Blast radius of main...feature/rotate-tokens (up to 4 hops)
 Changed files (1): shared/auth.py
-Changed symbols (2): shared/auth.py::make_token, shared/auth.py::verify_token
+Changed symbols (1): shared/auth.py::verify_token
 
 At-risk services:
   billing  1 hop  shared/auth.py::verify_token -> billing/invoice.py::charge
@@ -53,7 +53,7 @@ Reading it top to bottom:
 
 Two more sections help with triage. "Co-changed files" lists files that shared a past commit with `shared/auth.py`; `billing/invoice.py` changed with it when token expiry was added. "CI failures in at-risk services" keeps only the failing tests whose service is at risk, so each failure sits next to the call chain that explains it.
 
-Both changed symbols are listed because the CLI takes the changed file names from `git diff base...head`, and every symbol in a changed file counts as changed. `make_token` has no callers, so it adds nothing.
+Only `verify_token` counts as changed: the CLI maps the changed line ranges from `git diff base...head` onto each symbol's first and last line. `make_token` sits in the same file, but the branch did not touch it.
 
 ![The blast radius of the sample repo as a 3D graph](../assets/blast-3d.png)
 
@@ -74,7 +74,7 @@ Cognee loads a dlt source through its relational-manifest path: each row becomes
 
 There is one gap. Cognee draws row-to-row edges only from foreign keys in the staging database, and dlt's SQL destination creates none, so a fresh load has rows connected to their tables and to nothing else. `link_rows` fills that in. It reads the graph, finds each row node through its edge to the table node, and writes edges named the way Cognee names its own foreign-key edges: `sha_references_commits` from a file change to its commit, `from_symbol_references_symbols` and `to_symbol_references_symbols` from a call reference to the two functions it connects, and `commit_sha_references_commits` from a CI failure to its commit. Running it again writes nothing new. An edge whose row node it cannot find, or finds more than once, is skipped and counted as `missing` or `ambiguous` instead of being guessed at.
 
-To be precise: the walk is a plain breadth-first search over a NetworkX graph of callers. Without `--remember` it runs on the extracted rows and never imports Cognee. With `--remember` (the demo always does) the CLI loads the rows into a Cognee dataset named `gitgraph-<first 12 characters of the head sha>`, the `gitgraph-b73e5edafa07` above, runs `link_rows`, then reads the symbols and reference edges back from Cognee's graph and walks those. That is the "Callers found by walking Cognee's graph" line. It trusts only the row ids, and warns if the two walks disagree. The sample repo uses a fixed author and date for every commit, so that name is the same on every machine.
+The walk itself is a plain breadth-first search over a NetworkX graph of callers. Without `--remember` it runs on the extracted rows and never imports Cognee. With `--remember` (the demo always does) the CLI loads the rows into a Cognee dataset named `gitgraph-<first 12 characters of the head sha>`, the `gitgraph-b73e5edafa07` above, runs `link_rows`, then reads the symbols and reference edges back from Cognee's graph and walks those. That is the "Callers found by walking Cognee's graph" line. It trusts only the row ids, and warns if the two walks disagree. The sample repo uses a fixed author and date for every commit, so that name is the same on every machine.
 
 ## Proving it makes no LLM calls
 

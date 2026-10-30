@@ -266,7 +266,8 @@ def test_labels_never_overlap_and_the_blast_labels_stay_visible(
             # the summary card never hides the graph, at any screen size
             "under the panel": _under_panel(labels, panel),
         }
-        assert len(labels) == 8 and len(blast) == 7
+        # only verify_token changed; make_token is just a safe neighbour
+        assert len(labels) == 8 and len(blast) == 6
         problems[view] = {k: v for k, v in found.items() if v}
     # as opened, the graph fills the stage rather than floating in the middle of it
     wide, tall = _span(views["as opened"], stage)

@@ -6,6 +6,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 from collections import Counter
@@ -14,7 +15,7 @@ from typing import Any
 
 from git import GitCommandError, Repo
 
-from .blast import blast_radius
+from .blast import blast_radius, changed_symbol_ids
 from .ci_logs import parse_ci_logs
 from .git_history import extract_commits
 from .html import render_html
@@ -42,6 +43,11 @@ _DEMO_CI = {
 }
 
 
+_HUNK = re.compile(r"^@@ -\S+ \+(\d+)(?:,(\d+))? @@", re.MULTILINE)
+# ponytail: the text report shows the top 10 co-changed files; the JSON keeps them all.
+_TOP_CO_CHANGED = 10
+
+
 def _hops(count: int) -> str:
     return f"{count} hop" if count == 1 else f"{count} hops"
 
@@ -52,6 +58,26 @@ def _changed_paths(repo: Path, base: str, head: str) -> list[str]:
     except GitCommandError as exc:
         raise ValueError(f"cannot diff {base}...{head}") from exc
     return [path for path in out.split("\0") if path]
+
+
+def _changed_items(repo: Path, base: str, head: str) -> list[str]:
+    """Changed items for ``blast_radius``: ``path:start-end`` per head-side hunk of a .py file.
+
+    A pure deletion (``+a,0``) touches line ``a``. Other files, and .py files git shows no hunk
+    for (mode change, binary), stay plain paths: every symbol in them counts as changed.
+    """
+    items: list[str] = []
+    git = Repo(repo).git
+    for path in _changed_paths(repo, base, head):
+        hunks: list[tuple[int, int]] = []
+        if path.endswith(".py"):
+            # ponytail: one git call per changed .py file; batch into one diff if that gets slow.
+            diff = git.diff("-U0", "--no-color", f"{base}...{head}", "--", f":(literal){path}")
+            for match in _HUNK.finditer(diff):
+                start, count = int(match[1]), int(match[2] or 1)
+                hunks.append((max(start, 1), max(start, 1) + max(count, 1) - 1))
+        items += [f"{path}:{a}-{b}" for a, b in hunks] or [path]
+    return items
 
 
 def _blast(args: argparse.Namespace) -> dict[str, Any]:
@@ -66,8 +92,11 @@ def _blast(args: argparse.Namespace) -> dict[str, Any]:
     }
     if args.ci:
         tables["ci_failures"] = parse_ci_logs(args.ci)["ci_failures"]
-    changed = _changed_paths(args.repo, args.base, args.head)
-    result = blast_radius(tables, changed, max_hops=args.hops) | {"computed_from": "rows"}
+    changed = _changed_items(args.repo, args.base, args.head)
+    # Resolved once from the rows: Cognee's graph has no line info to resolve ranges with.
+    ids = changed_symbol_ids(code["symbols"], changed)
+    result = blast_radius(tables, changed, max_hops=args.hops, changed_symbols=ids)
+    result |= {"computed_from": "rows"}
     if args.remember:
         sha = Repo(args.repo).commit(args.head).hexsha[:12]
         # cognee prints progress; stdout is the report, so it goes to stderr (or nowhere)
@@ -75,7 +104,7 @@ def _blast(args: argparse.Namespace) -> dict[str, Any]:
             summary, graph = asyncio.run(_remember(args, refs, f"gitgraph-{sha}"))
         # The at-risk walk is read back from Cognee's graph; history and CI still come from rows.
         tables |= graph
-        walked = blast_radius(tables, changed, max_hops=args.hops)
+        walked = blast_radius(tables, changed, max_hops=args.hops, changed_symbols=ids)
         if any(walked[key] != result[key] for key in ("symbols", "files", "services")):
             print("warning: the blast over Cognee's graph differs from the rows'", file=sys.stderr)
         result = walked | {"computed_from": "cognee graph", "cognee": summary}
@@ -128,8 +157,10 @@ def _report(result: dict[str, Any]) -> str:
         lines += ["", "Co-changed files:"]
         lines += [
             f"  {c['path']}  ({len(c['shas'])} shared commit{'s' * (len(c['shas']) != 1)})"
-            for c in result["co_changed"]
+            for c in result["co_changed"][:_TOP_CO_CHANGED]
         ]
+        more = len(result["co_changed"]) - _TOP_CO_CHANGED
+        lines += [f"  ... and {more} more"] * (more > 0)
     if result["ci_failures"]:
         lines += ["", "CI failures in at-risk services:"]
         lines += [

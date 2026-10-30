@@ -31,8 +31,7 @@ FACTS = {
     "billing at 1 hop": r"^  billing  1 hop  ",
     "orders at 2 hops": r"^  orders  2 hops  ",
     "notifications at 4 hops": r"^  notifications  4 hops  ",
-    "make_token changed": r"^Changed symbols \(2\): .*shared/auth\.py::make_token",
-    "verify_token changed": r"^Changed symbols \(2\): .*shared/auth\.py::verify_token",
+    "verify_token changed": r"^Changed symbols \(1\): shared/auth\.py::verify_token$",
     "billing CI failure": r"^  billing-tests  billing  ",
     "orders CI failure": r"^  orders-tests  orders  ",
     "8 commits": r"^  commits: 8$",
@@ -338,8 +337,8 @@ def _script(passed: int | None) -> dict[str, str]:
             "Mergetober."
         ),
         "terminal1": (
-            "I run the demo. It builds a small sample monorepo and a branch that changes make "
-            "token and verify token in the shared auth file. This is its real output. Billing "
+            "I run the demo. It builds a small sample monorepo and a branch that changes "
+            "verify token in the shared auth file. This is its real output. Billing "
             "calls verify token directly, so it is one hop away. Orders is two hops away. "
             "Notifications is four hops away, through session loading, the cart and checkout. "
             "Search never touches auth, so it is not at risk. Two CI failures belong to at risk "
@@ -352,9 +351,10 @@ def _script(passed: int | None) -> dict[str, str]:
         ),
         "graph": (
             "Here is the real page the tool writes. Every node is a function. Arrows run from a "
-            "caller to what it calls. The red nodes are the symbols this branch changed, make "
-            "token and verify token. Amber nodes are at risk, and each label gives the service "
-            "and how many hops away it is. Grey nodes are safe, like search. You can see the "
+            "caller to what it calls. The red node is the one symbol this branch changed, "
+            "verify token. Amber nodes are at risk, and each label gives the service and how "
+            "many hops away it is. Grey nodes are safe, like search, and make token, which sits "
+            "in the same file but was not touched. You can see the "
             "path from verify token to billing, and the long way round to notifications."
         ),
         "how": (

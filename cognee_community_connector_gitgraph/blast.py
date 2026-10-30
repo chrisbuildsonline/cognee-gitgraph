@@ -6,6 +6,7 @@ symbols, so the answer is every symbol, file and top-level directory ("service")
 the change, how many hops away, and one shortest chain of ids that proves it.
 """
 
+import re
 from collections.abc import Iterable, Mapping
 from typing import Any
 
@@ -15,6 +16,10 @@ Row = Mapping[str, Any]
 Node = tuple[int, str]  # (0, symbol id) or (1, file path); files are leaves nothing references
 
 _SYMBOL, _FILE = 0, 1
+_ITEM = re.compile(r"(.*):(\d+)(?:-(\d+))?")
+# ponytail: fixed threshold. A commit touching more files than this (an initial import, a mass
+# rename) says nothing about what changes together; make it a flag if repos need another number.
+MAX_CO_CHANGE_FILES = 20
 
 
 def _service(path: str) -> str:
@@ -27,23 +32,44 @@ def _ci_service(failure: Row) -> str:
     return str(failure.get("test_id") or "").split("::", 1)[0].split(".", 1)[0]
 
 
-def _split(item: str) -> tuple[str, int | None]:
-    path, _, line = item.rpartition(":")
-    return (path, int(line)) if path and line.isdigit() else (item, None)
+def _split(item: str) -> tuple[str, int | None, int | None]:
+    """``path``, ``path:line`` or ``path:start-end`` -> (path, start, end); end only for a range."""
+    match = _ITEM.fullmatch(item)
+    if not match or not match[1]:
+        return item, None, None
+    return match[1], int(match[2]), int(match[3]) if match[3] else None
 
 
-def _changed_symbols(symbols: list[Row], changed: list[str]) -> set[str]:
+def _end(row: Row) -> int:
+    return int(row.get("end_line") or row["line"])
+
+
+def changed_symbol_ids(symbols: Iterable[Row], changed: Iterable[str]) -> set[str]:
+    """The symbol ids that the ``changed`` items (see ``blast_radius``) hit in ``symbols``."""
     by_file: dict[str, list[Row]] = {}
     for row in symbols:
         by_file.setdefault(row["file"], []).append(row)
     hit: set[str] = set()
     for item in changed:
-        path, line = _split(item)
+        path, line, end = _split(item)
         rows = by_file.get(path, [])
-        # ponytail: symbols carry only a start line, so a line after a function's end still maps to
-        # it; add end_lineno to the symbol rows if that precision ever matters. Rows read back from
-        # Cognee's graph have no line, so ``path:line`` there hits every symbol in the file.
+        # Rows read back from Cognee's graph have no line, so ``path:line`` and ``path:a-b`` there
+        # hit every symbol in the file; resolve against the extracted rows to be precise.
         lined = [r for r in rows if r.get("line") is not None]
+        if end is not None and line is not None and lined:
+            # ponytail: symbols span their `def` line to their last line, so an edit to a
+            # decorator above a function marks nothing; a fixed two-level nesting (class, method)
+            # is all the extractor emits, so "innermost" means "contains no other hit".
+            lo, hi = line, max(line, end)
+            over = [r for r in lined if r["line"] <= hi and _end(r) >= lo]
+            hit.update(
+                r["id"]
+                for r in over
+                if not any(
+                    o is not r and r["line"] <= o["line"] and _end(o) <= _end(r) for o in over
+                )
+            )
+            continue
         above = [r for r in lined if line is not None and r["line"] <= line]
         if above:
             hit.add(max(above, key=lambda r: (r["line"], r["id"]))["id"])
@@ -53,12 +79,19 @@ def _changed_symbols(symbols: list[Row], changed: list[str]) -> set[str]:
 
 
 def blast_radius(
-    tables: Mapping[str, Iterable[Row]], changed: Iterable[str], max_hops: int = 4
+    tables: Mapping[str, Iterable[Row]],
+    changed: Iterable[str],
+    max_hops: int = 4,
+    changed_symbols: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     """What a change can break, as JSON-serialisable data with every list sorted.
 
-    ``changed`` items are repo paths (every symbol in the file changes) or ``path:line`` (the
-    symbol in that file starting at or before the line, else every symbol in the file). Callers
+    ``changed`` items are repo paths (every symbol in the file changes), ``path:line`` (the
+    symbol in that file starting at or before the line, else every symbol in the file) or
+    ``path:start-end`` (the innermost symbols whose lines overlap the range; none if the range is
+    all module-level, though the file still counts as changed; every symbol in the file if the
+    rows carry no line info). ``changed_symbols`` replaces that resolution with ready symbol ids
+    (see ``changed_symbol_ids``); ``changed`` then only names the changed files. Callers
     are followed up to ``max_hops``; ``symbols``, ``files`` and ``services`` carry the hop count
     and ``path``, the ids from a changed symbol to the hit (shortest, ties by sorted ids).
     ``services`` leaves out the top-level directories of the changed files; ``co_changed`` lists
@@ -72,7 +105,9 @@ def blast_radius(
     symbols = rows.get("symbols", [])
     file_of = {r["id"]: r["file"] for r in symbols}
     changed_files = sorted({_split(item)[0] for item in items})
-    changed_ids = _changed_symbols(symbols, items)
+    changed_ids = (
+        changed_symbol_ids(symbols, items) if changed_symbols is None else set(changed_symbols)
+    )
 
     graph: nx.DiGraph = nx.DiGraph()
     graph.add_nodes_from(sorted((_SYMBOL, sid) for sid in file_of))
@@ -139,8 +174,13 @@ def blast_radius(
     ]
 
     shared: dict[str, set[str]] = {}
+    sizes: dict[str, int] = {}
+    for row in rows.get("file_changes", []):
+        sizes[row["sha"]] = sizes.get(row["sha"], 0) + 1
     shas_of_changed = {
-        row["sha"] for row in rows.get("file_changes", []) if row["path"] in changed_files
+        row["sha"]
+        for row in rows.get("file_changes", [])
+        if row["path"] in changed_files and sizes[row["sha"]] <= MAX_CO_CHANGE_FILES
     }
     for row in rows.get("file_changes", []):
         if row["sha"] in shas_of_changed and row["path"] not in changed_files:

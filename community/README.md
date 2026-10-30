@@ -59,7 +59,7 @@ Five tables. Each has a single `id` column as its primary key, and `id` is the f
 | --- | --- | --- |
 | `commits` | commit sha | `sha`, `parents`, `author`, `author_email`, `date`, `message`, `refs` (lists are space-separated strings) |
 | `file_changes` | `<sha>:<path>` | `sha`, `path`, `change_type`, `lines_added`, `lines_deleted`, `old_path` |
-| `symbols` | `<file>::<qualified name>` | `kind` (function, class, method), `name`, `file`, `line` |
+| `symbols` | `<file>::<qualified name>` | `kind` (function, class, method), `name`, `file`, `line`, `end_line` |
 | `references` | `<file>:<owner>-><target>:<kind>` | `from_file`, `from_symbol`, `to_symbol`, `kind` (call, import), `line` |
 | `ci_failures` | `<job>:<test id>` | `job`, `test_id`, `file`, `commit_sha`, `kind`, `message` |
 
@@ -74,7 +74,7 @@ To drop a dataset, use `cognee.forget(dataset="gitgraph")`.
 
 ## Blast radius
 
-`blast_radius(tables, changed, max_hops=4)` is a pure function over the extracted rows (graph traversal with NetworkX, no LLM). `tables` maps a table name to its rows, for example from `extract_commits` and `extract_symbols`, and `changed` is a list of repo paths or `path:line` items. It returns JSON-serialisable data with `changed_files`, `changed_symbols`, `symbols`, `files`, `services`, `co_changed` and `ci_failures`, every list sorted.
+`blast_radius(tables, changed, max_hops=4)` is a pure function over the extracted rows (graph traversal with NetworkX, no LLM). `tables` maps a table name to its rows, for example from `extract_commits` and `extract_symbols`, and `changed` is a list of repo paths (every symbol in the file changes), `path:line` items or `path:start-end` line ranges (the innermost symbols the range overlaps). It returns JSON-serialisable data with `changed_files`, `changed_symbols`, `symbols`, `files`, `services`, `co_changed` and `ci_failures`, every list sorted.
 
 ## CLI
 
@@ -90,7 +90,8 @@ cognee-gitgraph demo [--json] [--verbose] [--html PATH]
 - `--json` prints the result as JSON instead of the text report.
 - `--remember` also loads the repo into Cognee (with `self_improvement=False`) and links the rows, using one dataset per head commit named `gitgraph-<first 12 characters of the head sha>`. Cognee's progress output is hidden unless `--verbose` is given.
 - `--html PATH` also writes a self-contained 3D page of the blast radius: red nodes are the changed symbols, amber nodes are at risk, grey nodes are safe. The 3d-force-graph library (MIT) is inlined from `cognee_community_connector_gitgraph/vendor/`, so the page makes no network request.
-- The diff is `base...head`. Symbols are read from `head`; history is read from both refs.
+- The diff is `base...head`. Symbols are read from `head`; history is read from both refs. A symbol counts as changed when one of the diff's changed line ranges on `head` overlaps its lines.
+- Co-changed files leave out commits that touch more than 20 files. The text report shows the top 10; `--json` lists them all.
 - A bad repo, ref or CI path prints `error: ...` to stderr and exits with status 2.
 
 `cognee-gitgraph demo` builds a small sample monorepo and blasts a branch of it.
@@ -110,7 +111,7 @@ The tests need no API key. They need the network only on the first run, for Cogn
 
 - Symbols come from Python files only. Other languages are not parsed.
 - Only top-level functions, top-level classes and their direct methods become symbols; nested functions and classes are skipped. Calls are resolved by name through imports, plus `self.m()`/`cls.m()` inside a class, `Cls.m()`, and `obj.m()` when every assignment to `obj` in the same function is `Cls(...)` of one class. Attribute chains like `self.client.m()`, dynamic calls and type inference across functions are not seen.
-- A symbol row carries only its start line. A changed line is mapped to the nearest symbol that starts at or before it.
+- A symbol spans its `def` or `class` line to its last line, so an edit that only touches a decorator marks no symbol as changed. A plain `path:line` item given to `blast_radius` still maps to the nearest symbol that starts at or before the line.
 - `link_rows` reads the whole graph to find the row nodes, so it gets slower as the graph grows. A row key claimed by more than one node is not linked and is counted as `ambiguous`.
 - Merge commits produce no `file_changes` rows.
 

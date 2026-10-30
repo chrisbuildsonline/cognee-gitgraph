@@ -296,3 +296,78 @@ def test_disconnected_component_never_appears() -> None:
         out = blast_radius(tables, ["d0/m0.py"])
         assert "island" not in {s["name"] for s in out["services"]}
         assert "island/x.py::z" not in {s["id"] for s in out["symbols"]}
+
+
+def _sym(file: str, name: str, line: int, end: int) -> dict[str, Any]:
+    sid = f"{file}::{name}"
+    return {"id": sid, "name": name, "file": file, "line": line, "end_line": end}
+
+
+def _ranged() -> Tables:
+    return {
+        "symbols": [
+            _sym("m.py", "A", 5, 20),
+            _sym("m.py", "A.one", 6, 10),
+            _sym("m.py", "A.two", 12, 20),
+            _sym("m.py", "top", 25, 30),
+        ]
+    }
+
+
+def test_range_overlaps_one_function_only() -> None:
+    out = blast_radius(_ranged(), ["m.py:26-27"])
+    assert out["changed_symbols"] == ["m.py::top"]
+    assert out["changed_files"] == ["m.py"]
+
+
+def test_range_touching_a_function_edge_counts() -> None:
+    assert blast_radius(_ranged(), ["m.py:30-31"])["changed_symbols"] == ["m.py::top"]
+    assert blast_radius(_ranged(), ["m.py:23-25"])["changed_symbols"] == ["m.py::top"]
+
+
+def test_range_in_a_method_marks_the_method_not_its_class() -> None:
+    out = blast_radius(_ranged(), ["m.py:7-8"])
+    assert out["changed_symbols"] == ["m.py::A.one"]
+
+
+def test_range_in_class_body_outside_methods_marks_the_class() -> None:
+    assert blast_radius(_ranged(), ["m.py:11-11"])["changed_symbols"] == ["m.py::A"]
+
+
+def test_range_over_two_methods_marks_both_not_the_class() -> None:
+    out = blast_radius(_ranged(), ["m.py:9-13"])
+    assert out["changed_symbols"] == ["m.py::A.one", "m.py::A.two"]
+
+
+def test_module_level_range_marks_no_symbol_but_keeps_the_file() -> None:
+    out = blast_radius(_ranged(), ["m.py:1-3"])
+    assert out["changed_symbols"] == []
+    assert out["changed_files"] == ["m.py"]
+
+
+def test_range_on_rows_without_lines_marks_every_symbol_in_the_file() -> None:
+    rows = {"symbols": [{"id": "m.py::a", "file": "m.py"}, {"id": "m.py::b", "file": "m.py"}]}
+    assert blast_radius(rows, ["m.py:1-2"])["changed_symbols"] == ["m.py::a", "m.py::b"]
+
+
+def test_explicit_changed_symbols_override_the_items() -> None:
+    rows = {"symbols": [{"id": "m.py::a", "file": "m.py"}, {"id": "m.py::b", "file": "m.py"}]}
+    out = blast_radius(rows, ["m.py"], changed_symbols=["m.py::b"])
+    assert out["changed_symbols"] == ["m.py::b"]
+    assert out["changed_files"] == ["m.py"]
+
+
+def _commit_rows(sha: str, paths: list[str]) -> list[dict[str, Any]]:
+    return [{"sha": sha, "path": p} for p in paths]
+
+
+def test_bulk_commits_are_ignored_for_co_changed() -> None:
+    rows = _ranged() | {
+        "file_changes": _commit_rows("small", ["m.py", "near.py"])
+        + _commit_rows("bulk", ["m.py"] + [f"f{i}.py" for i in range(20)])
+        + _commit_rows("edge", ["m.py", "edge.py"] + [f"g{i}.py" for i in range(18)])
+    }
+    out = blast_radius(rows, ["m.py"])
+    paths = {c["path"] for c in out["co_changed"]}
+    assert "near.py" in paths and "edge.py" in paths  # 20 files is not bulk
+    assert not any(p.startswith("f") for p in paths)  # 21 files is

@@ -457,3 +457,64 @@ def test_demo_text_report() -> None:
     for name in ("billing", "orders", "notifications"):
         assert name in done.stdout
     assert "search" not in done.stdout
+
+
+def _history_repo(tmp_path: Path) -> Repo:
+    repo = Repo.init(tmp_path / "r", initial_branch="main")
+    root = Path(repo.working_dir)
+    body = "".join(f"def f{i}():\n    return {i}\n" for i in range(6))  # lines 3-14
+    (root / "m.py").write_text("import os\n\n" + body)
+    (root / "notes.txt").write_text("a\n")
+    repo.index.add(["m.py", "notes.txt"])
+    repo.index.commit("base")
+    repo.create_head("feat").checkout()
+    lines = (root / "m.py").read_text().splitlines(keepends=True)
+    lines[3] = "    return 99\n"  # line 4, in f0
+    del lines[8:10]  # pure deletion: head side is empty after line 8
+    (root / "m.py").write_text("".join(lines))
+    (root / "notes.txt").write_text("b\n")
+    repo.index.add(["m.py", "notes.txt"])
+    repo.index.commit("change")
+    return repo
+
+
+def test_changed_items_are_head_side_ranges_for_python_only(tmp_path: Path) -> None:
+    repo = _history_repo(tmp_path)
+    items = cli._changed_items(Path(repo.working_dir), "main", "feat")
+    assert sorted(items) == ["m.py:4-4", "m.py:8-8", "notes.txt"]
+
+
+def test_python_file_with_no_hunks_counts_whole(tmp_path: Path) -> None:
+    repo = Repo.init(tmp_path / "r", initial_branch="main")
+    root = Path(repo.working_dir)
+    (root / "a.py").write_text("def a():\n    pass\n")
+    repo.index.add(["a.py"])
+    repo.index.commit("base")
+    repo.create_head("feat").checkout()
+    repo.git.update_index("--chmod=+x", "a.py")
+    repo.index.commit("mode only")
+    assert cli._changed_items(root, "main", "feat") == ["a.py"]
+
+
+def test_text_report_caps_co_changed_at_ten() -> None:
+    from cognee_community_connector_gitgraph.cli import _report
+
+    co = [{"path": f"f{i:02d}.py", "shas": ["1"]} for i in range(13)]
+    result: dict[str, Any] = {
+        "base": "a",
+        "head": "b",
+        "max_hops": 1,
+        "changed_files": [],
+        "changed_symbols": [],
+        "services": [],
+        "symbols": [],
+        "files": [],
+        "co_changed": co,
+        "ci_failures": [],
+        "computed_from": "rows",
+    }
+    report = _report(result)
+    assert "f09.py" in report and "f10.py" not in report
+    assert "... and 3 more" in report
+    result["co_changed"] = co[:10]
+    assert "more" not in _report(result)
