@@ -43,7 +43,7 @@ def test_quick_start_output_is_the_real_demo_output() -> None:
 def test_every_bun_script_in_the_readme_exists() -> None:
     """Given `bun run <name>` in the README, then package.json has that script."""
     scripts = json.loads((ROOT / "package.json").read_text())["scripts"]
-    named = set(re.findall(r"bun run ([\w:]+)", README))
+    named = set(re.findall(r"bun run ([\w:-]+)", README))
     assert named
     assert named <= set(scripts), named - set(scripts)
 

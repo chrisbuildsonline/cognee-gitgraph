@@ -51,6 +51,88 @@ The demo uses a throwaway Cognee home in a temp directory and leaves nothing beh
 
 Which path does what: without `--remember`, `blast` walks the extracted rows in memory and never imports Cognee. With `--remember` (the demo always passes it), the rows go into Cognee, `link_rows` adds the edges between them, and the walk is then read back from Cognee's graph: the symbols and references are rebuilt from the row nodes and the `from_symbol` and `to_symbol` edges, and only history and CI failures still come from the rows. The `Callers found by walking ...` line says which path ran, and `--json` has it as `computed_from` (`rows` or `cognee graph`). If the graph walk and the row walk disagree, a warning goes to stderr.
 
+## On a real repo
+
+```bash
+bun run real-repo
+```
+
+This clones [karpathy/nanochat](https://github.com/karpathy/nanochat) (MIT) into `out/` and blasts one real commit, [2f2d7ab](https://github.com/karpathy/nanochat/commit/2f2d7ab80cd07a8b5fab9feebcb185fd3ca37339) "fix: safe DDP cleanup (check initialized PG, not just env) (#256)", against its parent [91d76cc](https://github.com/karpathy/nanochat/commit/91d76cc690ac35a253651e886a4f0b34d745a232). That commit changed `get_dist_info`, `compute_init` and `compute_cleanup` in `nanochat/common.py`. The script runs `cognee-gitgraph blast --json` without `--remember` (so no Cognee), writes the result to `tests/fixtures/real_repo/blast.json` and prints the report. A test checks that this block is the report of that file:
+
+```text
+Blast radius of 91d76cc690ac35a253651e886a4f0b34d745a232...2f2d7ab80cd07a8b5fab9feebcb185fd3ca37339 (up to 4 hops)
+Changed files (1): nanochat/common.py
+Changed symbols (17): nanochat/common.py::ColoredFormatter, nanochat/common.py::ColoredFormatter.format, nanochat/common.py::DummyWandb, nanochat/common.py::DummyWandb.__init__, nanochat/common.py::DummyWandb.finish, nanochat/common.py::DummyWandb.log, nanochat/common.py::autodetect_device_type, nanochat/common.py::compute_cleanup, nanochat/common.py::compute_init, nanochat/common.py::download_file_with_lock, nanochat/common.py::get_base_dir, nanochat/common.py::get_dist_info, nanochat/common.py::is_ddp_initialized, nanochat/common.py::is_ddp_requested, nanochat/common.py::print0, nanochat/common.py::print_banner, nanochat/common.py::setup_default_logging
+
+At-risk services:
+  dev  1 hop  nanochat/common.py::get_base_dir -> dev/gen_synthetic_data.py
+  scripts  1 hop  nanochat/common.py::autodetect_device_type -> scripts/base_eval.py::main
+  tasks  1 hop  nanochat/common.py::download_file_with_lock -> tasks/spellingbee.py::SimpleSpelling.__init__
+  tests  1 hop  nanochat/common.py::get_base_dir -> tests/test_rustbpe.py::enwik8_path
+At-risk symbols: 21 in 21 files
+Callers found by walking the extracted rows
+
+Co-changed files:
+  scripts/base_train.py  (6 shared commits)
+  scripts/base_eval.py  (5 shared commits)
+  nanochat/checkpoint_manager.py  (3 shared commits)
+  nanochat/dataloader.py  (3 shared commits)
+  nanochat/report.py  (3 shared commits)
+  scripts/base_loss.py  (3 shared commits)
+  nanochat/engine.py  (2 shared commits)
+  nanochat/gpt.py  (2 shared commits)
+  nanochat/loss_eval.py  (2 shared commits)
+  pyproject.toml  (2 shared commits)
+  scripts/chat_eval.py  (2 shared commits)
+  scripts/chat_sft.py  (2 shared commits)
+  scripts/chat_web.py  (2 shared commits)
+  scripts/mid_train.py  (2 shared commits)
+  speedrun.sh  (2 shared commits)
+  tasks/spellingbee.py  (2 shared commits)
+  tests/test_rustbpe.py  (2 shared commits)
+  uv.lock  (2 shared commits)
+  .gitignore  (1 shared commit)
+  .python-version  (1 shared commit)
+  README.md  (1 shared commit)
+  dev/generate_logo.html  (1 shared commit)
+  dev/repackage_data_reference.py  (1 shared commit)
+  dev/runcpu.sh  (1 shared commit)
+  nanochat/__init__.py  (1 shared commit)
+  nanochat/adamw.py  (1 shared commit)
+  nanochat/configurator.py  (1 shared commit)
+  nanochat/core_eval.py  (1 shared commit)
+  nanochat/dataset.py  (1 shared commit)
+  nanochat/execution.py  (1 shared commit)
+  nanochat/logo.svg  (1 shared commit)
+  nanochat/muon.py  (1 shared commit)
+  nanochat/tokenizer.py  (1 shared commit)
+  nanochat/ui.html  (1 shared commit)
+  run1000.sh  (1 shared commit)
+  rustbpe/Cargo.lock  (1 shared commit)
+  rustbpe/Cargo.toml  (1 shared commit)
+  rustbpe/README.md  (1 shared commit)
+  rustbpe/src/lib.rs  (1 shared commit)
+  scripts/chat_cli.py  (1 shared commit)
+  scripts/chat_rl.py  (1 shared commit)
+  scripts/tok_eval.py  (1 shared commit)
+  scripts/tok_train.py  (1 shared commit)
+  tasks/arc.py  (1 shared commit)
+  tasks/common.py  (1 shared commit)
+  tasks/customjson.py  (1 shared commit)
+  tasks/gsm8k.py  (1 shared commit)
+  tasks/humaneval.py  (1 shared commit)
+  tasks/mmlu.py  (1 shared commit)
+  tasks/smoltalk.py  (1 shared commit)
+```
+
+How to read it:
+
+- The diff is per file, so all 17 symbols in `common.py` count as changed, not only the three the commit touched. Each service shows one shortest chain (fewest hops, then sorted ids), so a chain can start at a function the commit did not change, such as `get_base_dir`.
+- Every service is 1 hop away because each of those directories calls `common.py` directly. The JSON has the longer chains: `get_dist_info` -> `tokenizing_distributed_data_loader_with_state` -> `tokenizing_distributed_data_loader` in `nanochat/dataloader.py` is 2 hops, and `load_model_from_dir` in `nanochat/checkpoint_manager.py` is 3.
+- A caller in module-level code shows up as its file, like `dev/gen_synthetic_data.py`, not as a function.
+- Co-changed counts every commit back to the first. `common.py` came in with the initial commit, which added 47 files at once, so most of that list shares only that one commit.
+- Calls the parser cannot resolve (see Limitations) are not followed, so a caller that reaches `common.py` only through one of them is not listed.
+
 ## Install as a package
 
 ```bash
