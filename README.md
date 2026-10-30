@@ -186,7 +186,7 @@ Python 3.12, cognee 1.6.5, dlt, GitPython, NetworkX and the standard library `as
 ## Limitations
 
 - Symbols come from Python files only. Other languages are not parsed.
-- Only top-level functions, top-level classes and their direct methods become symbols; nested functions and classes are skipped. Calls are resolved by name through imports, so dynamic calls are not seen.
+- Only top-level functions, top-level classes and their direct methods become symbols; nested functions and classes are skipped. Calls are resolved by name through imports, plus `self.m()`/`cls.m()` inside a class, `Cls.m()`, and `obj.m()` when every assignment to `obj` in the same function is `Cls(...)` of one class. Attribute chains like `self.client.m()`, dynamic calls and type inference across functions are not seen.
 - A symbol row carries only its start line. A changed line is mapped to the nearest symbol that starts at or before it, so a line after a function's end still maps to that function.
 - `link_rows` reads the whole graph to find the row nodes, so it gets slower as the graph grows. A row key claimed by more than one node is not linked and is counted as `ambiguous`.
 - Merge commits produce no `file_changes` rows.

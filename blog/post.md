@@ -103,6 +103,6 @@ docker build -t cognee-gitgraph .
 docker run --rm --network none cognee-gitgraph bun run demo
 ```
 
-The limits: only Python files are parsed, calls are resolved by name through imports (dynamic calls are not seen), and nested functions are skipped. For a shared helper in a Python monorepo, that is usually enough to know which teams to ping before you merge.
+The limits: Python only, and nested functions are skipped. Calls resolve through imports, `self.m()` and same-function `Cls()` instances, not `self.client.m()` or dynamic calls. For a shared helper in a Python monorepo, that is usually enough to know which teams to ping before you merge.
 
 The code is at <https://github.com/chrisbuildsonline/cognee-gitgraph>, and the proposal to add it to cognee-community is <https://github.com/topoteretes/cognee/issues/6329>.
