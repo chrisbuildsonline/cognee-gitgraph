@@ -119,6 +119,17 @@ def test_row_index_maps_table_and_id_to_node() -> None:
     assert index_rows(nodes, edges) == ({("commits", "abc"): "n1"}, set())
 
 
+def test_row_text_without_a_schema_block_is_read() -> None:
+    # cognee 1.6.6 writes only the table line before Row Data (no Columns, no blank line).
+    real = "Table: commits\nRow Data:\n  id: abc\n  message: hi"
+    forged = "Table: commits\nRow Data:\n  id: ccc\n  message: x\nRow Data:\n  id: aaa"
+    other = "Table: commitsx\nRow Data:\n  id: zzz"
+    nodes, edges = _graph(
+        ("n1", "commits", real), ("n2", "commits", forged), ("n3", "commits", other)
+    )
+    assert index_rows(nodes, edges) == ({("commits", "abc"): "n1", ("commits", "ccc"): "n2"}, set())
+
+
 def test_spoofed_id_line_in_a_later_column_is_ignored() -> None:
     real = _text("commits", "  id: aaa", "  message: x")
     spoof = _text("commits", "  id: bbb", "  message: x\n  id: aaa\n  y: z")

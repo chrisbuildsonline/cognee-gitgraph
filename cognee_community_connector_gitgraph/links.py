@@ -75,14 +75,15 @@ def build_edges(tables: Mapping[str, Iterable[Row]]) -> list[Edge]:
 def _row_id(text: str, table: str) -> str | None:
     """The id of a row node's text, or None unless ``id`` is the very first Row Data line.
 
-    Cognee renders ``Table: <name>``, the schema, a blank line, ``Row Data:`` and then one
-    ``  <column>: <value>`` line per column in column order, values unescaped. Row values come
-    from untrusted repos and may contain newlines, so only the line right after the first
-    ``Row Data:`` header (everything before it is schema, not row data) can be trusted, and
-    only because ``id`` is the first column of every table.
+    Cognee renders ``Table: <name>``, the schema and a blank line (cognee 1.6.5; 1.6.6 drops
+    both), ``Row Data:`` and then one ``  <column>: <value>`` line per column in column order,
+    values unescaped. Row values come from untrusted repos and may contain newlines, so only
+    the line right after the first ``Row Data:`` header (everything before it is schema, not
+    row data) can be trusted, and only because ``id`` is the first column of every table.
     """
     head, found, data = text.partition("\nRow Data:\n")
-    if not found or not head.startswith(f"Table: {table}\n"):
+    title = f"Table: {table}"
+    if not found or (head != title and not head.startswith(title + "\n")):
         return None
     first = data.split("\n", 1)[0]
     return first[len(_ID_PREFIX) :] if first.startswith(_ID_PREFIX) else None
