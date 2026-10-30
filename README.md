@@ -2,6 +2,8 @@
 
 A pull request that touches a shared helper can break services several call hops away; this shows which ones before you merge, deterministically and with no LLM.
 
+Demo (2 min 29 s): [cognee-gitgraph-demo.mp4](assets/cognee-gitgraph-demo.mp4).
+
 A Cognee community connector that loads a git repository into Cognee's graph: commits, file changes, Python symbols and references, and CI test failures from JUnit XML. From that data it computes the blast radius of a pull request: which functions call the code you changed, how many hops away they are, which top-level services they live in, and which CI failures belong to those services. The blast radius is plain graph traversal over the extracted rows, so the default path makes zero LLM calls and needs no API key. Loading into Cognee is optional and also runs without a key, on Cognee's local embedded stores, its local fastembed embedding model and, for its own graph extraction step, its local GLiNER model. On the very first load Cognee downloads those models and installs CPU-only PyTorch (about 200 MB), so that one run needs the network; the Docker image does this at build time.
 
 ## Quick start
