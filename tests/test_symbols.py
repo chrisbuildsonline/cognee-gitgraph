@@ -225,6 +225,147 @@ def test_alias_and_same_module_calls(tmp_path: Path) -> None:
     }
 
 
+def test_self_and_cls_method_calls(tmp_path: Path) -> None:
+    src = (
+        "class C:\n"
+        "    def a(self):\n"
+        "        self.b()\n"
+        "        self.missing()\n"
+        "    def b(self):\n"
+        "        pass\n"
+        "    def c(self):\n"
+        "        def inner():\n"
+        "            self.b()\n"
+        "    @classmethod\n"
+        "    def make(cls):\n"
+        "        cls.b()\n"
+        "\n"
+        "C.b()\n"
+    )
+    out = _extract(tmp_path, {"m.py": src})
+    assert _edges(out) == {
+        ("m.py", "m.py::C.a", "m.py::C.b", "call"),
+        ("m.py", "m.py::C.c", "m.py::C.b", "call"),
+        ("m.py", "m.py::C.make", "m.py::C.b", "call"),
+        ("m.py", None, "m.py::C.b", "call"),
+    }
+
+
+def test_instance_method_calls_across_files(tmp_path: Path) -> None:
+    out = _extract(
+        tmp_path,
+        {
+            "shop/__init__.py": "",
+            "shop/cart.py": "class Cart:\n    def total(self):\n        pass\n",
+            "run.py": (
+                "from shop.cart import Cart\n"
+                "import shop.cart as sc\n"
+                "\n"
+                "def go():\n"
+                "    c = Cart()\n"
+                "    c.total()\n"
+                "\n"
+                "def go2():\n"
+                "    d = sc.Cart()\n"
+                "    d.total()\n"
+                "    sc.Cart.total()\n"
+                "\n"
+                "cart = Cart()\n"
+                "cart.total()\n"
+            ),
+        },
+    )
+    cart, total = "shop/cart.py::Cart", "shop/cart.py::Cart.total"
+    assert _edges(out) == {
+        ("run.py", None, cart, "import"),
+        ("run.py", "run.py::go", cart, "call"),
+        ("run.py", "run.py::go", total, "call"),
+        ("run.py", "run.py::go2", cart, "call"),
+        ("run.py", "run.py::go2", total, "call"),
+        ("run.py", None, cart, "call"),
+        ("run.py", None, total, "call"),
+    }
+
+
+def test_local_class_instance_method_call(tmp_path: Path) -> None:
+    src = (
+        "class Repo:\n"
+        "    def save(self):\n"
+        "        pass\n"
+        "\n"
+        "def run():\n"
+        "    r = Repo()\n"
+        "    r.save()\n"
+    )
+    out = _extract(tmp_path, {"m.py": src})
+    assert _edges(out) == {
+        ("m.py", "m.py::run", "m.py::Repo", "call"),
+        ("m.py", "m.py::run", "m.py::Repo.save", "call"),
+    }
+
+
+def test_ambiguous_instance_not_resolved(tmp_path: Path) -> None:
+    src = (
+        "class A:\n"
+        "    def m(self):\n"
+        "        pass\n"
+        "\n"
+        "class B:\n"
+        "    def m(self):\n"
+        "        pass\n"
+        "\n"
+        "def run(flag):\n"
+        "    x = A()\n"
+        "    if flag:\n"
+        "        x = B()\n"
+        "    x.m()\n"
+        "\n"
+        "def other(make):\n"
+        "    y = A()\n"
+        "    y = make()\n"
+        "    y.m()\n"
+        "\n"
+        "def third():\n"
+        "    for z in []:\n"
+        "        pass\n"
+        "    z = A()\n"
+        "    z.m()\n"
+    )
+    out = _extract(tmp_path, {"m.py": src})
+    assert _edges(out) == {
+        ("m.py", "m.py::run", "m.py::A", "call"),
+        ("m.py", "m.py::run", "m.py::B", "call"),
+        ("m.py", "m.py::other", "m.py::A", "call"),
+        ("m.py", "m.py::third", "m.py::A", "call"),
+    }
+
+
+def test_unrelated_attribute_calls_stay_unresolved(tmp_path: Path) -> None:
+    out = _extract(
+        tmp_path,
+        {
+            "a.py": "class A:\n    def m(self):\n        pass\n",
+            "b.py": (
+                "from a import A\n"
+                "\n"
+                "cart = A()\n"
+                "\n"
+                "def f():\n"
+                "    cart.m()\n"
+                "    x = 3\n"
+                "    x.m()\n"
+                "    data.m()\n"
+                "    self.m()\n"
+                "    self.client.m()\n"
+            ),
+        },
+    )
+    assert _edges(out) == {
+        ("b.py", None, "a.py::A", "import"),
+        ("b.py", None, "a.py::A", "call"),
+    }
+
+
 def test_import_inside_function_uses_enclosing_symbol(tmp_path: Path) -> None:
     out = _extract(
         tmp_path,

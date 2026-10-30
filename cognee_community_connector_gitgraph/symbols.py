@@ -2,6 +2,7 @@
 
 import ast
 import warnings
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +61,9 @@ def _walk(path: str, tree: ast.Module, modules: dict[str, str]) -> tuple[list[Ro
     mod_aliases: dict[str, str] = {}  # dotted local name -> module file path
     local: set[str] = set()
     calls: list[tuple[str | None, ast.expr, int]] = []
+    methods: dict[str | None, str] = {}  # method symbol id -> class symbol id
+    assigned: dict[tuple[str | None, str], list[ast.expr]] = {}  # (owner, name) -> `name = value`s
+    stores: Counter[tuple[str | None, str]] = Counter()  # (owner, name) -> times bound
 
     def symbol(kind: str, qualname: str, node: ast.AST) -> str:
         sid = f"{path}::{qualname}"
@@ -100,6 +104,7 @@ def _walk(path: str, tree: ast.Module, modules: dict[str, str]) -> tuple[list[Ro
                 local.add(node.name)
             elif scope.startswith("class:"):
                 owner = symbol("method", f"{scope[6:]}.{node.name}", node)
+                methods[owner] = f"{path}::{scope[6:]}"
         elif isinstance(node, ast.ClassDef):
             if scope == "module":
                 symbol("class", node.name, node)
@@ -115,22 +120,48 @@ def _walk(path: str, tree: ast.Module, modules: dict[str, str]) -> tuple[list[Ro
             continue
         elif isinstance(node, ast.Call):
             calls.append((owner, node.func, node.lineno))
+        elif isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    assigned.setdefault((owner, t.id), []).append(node.value)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            stores[(owner, node.id)] += 1
         body = getattr(node, "body", None) if isinstance(node, ast.ClassDef) else None
         for child in ast.iter_child_nodes(node):
             in_body = isinstance(body, list) and child in body
             stack.append((child, owner, child_scope if in_body else "nested"))
 
-    for owner, func, line in calls:
-        target = None
+    def resolve(func: ast.expr) -> str | None:  # `name` or `mod_alias.name` -> symbol id
         if isinstance(func, ast.Name):
             if func.id in names:
-                target = names[func.id]
-            elif func.id in local:
-                target = f"{path}::{func.id}"
+                return names[func.id]
+            if func.id in local:
+                return f"{path}::{func.id}"
         elif isinstance(func, ast.Attribute):
             dotted = _dotted(func.value)
             if dotted is not None and dotted in mod_aliases:
-                target = f"{mod_aliases[dotted]}::{func.attr}"
+                return f"{mod_aliases[dotted]}::{func.attr}"
+        return None
+
+    def instance_of(owner: str | None, name: str) -> str | None:
+        # Only if every binding of the name in this scope is a constructor call of one class.
+        values = assigned.get((owner, name), [])
+        classes = {resolve(v.func) if isinstance(v, ast.Call) else None for v in values}
+        return classes.pop() if len(classes) == 1 and len(values) == stores[(owner, name)] else None
+
+    # ponytail: no type inference across functions or attributes like self.client.m().
+    for owner, func, line in calls:
+        target = resolve(func)
+        if target is None and isinstance(func, ast.Attribute):
+            base = func.value
+            if isinstance(base, ast.Name) and base.id in ("self", "cls") and owner in methods:
+                cls: str | None = methods[owner]
+            elif isinstance(base, ast.Name) and (owner, base.id) in stores:
+                cls = instance_of(owner, base.id)
+            else:
+                cls = resolve(base)  # Cls.m() or mod_alias.Cls.m()
+            if cls is not None:
+                target = f"{cls}.{func.attr}"
         if target is not None:
             refs.append(_ref(path, owner, target, "call", line))
     return symbols, refs
